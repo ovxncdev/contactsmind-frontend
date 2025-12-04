@@ -732,16 +732,38 @@ function renderContacts() {
   const grid = document.getElementById('contacts-grid');
   
   if (contacts.length === 0) {
-    grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 60px; color: var(--color-gray-500);">No contacts yet. Start adding some!</div>';
+    grid.innerHTML = '<div class="empty-state"><div class="empty-state-title">No contacts yet</div><div class="empty-state-text">Start adding some!</div></div>';
     return;
   }
+  
+  // Update count text
+  const countText = document.getElementById('contacts-count-text');
+  if (countText) countText.textContent = `${contacts.length} contact${contacts.length !== 1 ? 's' : ''}`;
   
   grid.innerHTML = '';
   contacts.forEach(contact => {
     const card = document.createElement('div');
     card.className = 'contact-card';
     
-    let html = `<h3 class="contact-name">${escapeHtml(contact.name)}</h3>`;
+    let html = `
+      <div class="contact-card-header">
+        <h3 class="contact-name">${escapeHtml(contact.name)}</h3>
+        <div class="contact-actions">
+          <button class="icon-btn-sm" onclick="editContact('${contact.id}')" title="Edit">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+            </svg>
+          </button>
+          <button class="icon-btn-sm delete" onclick="deleteContact('${contact.id}')" title="Delete">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+          </button>
+        </div>
+      </div>
+    `;
     
     if (contact.skills && contact.skills.length > 0) {
       html += '<div class="skills">';
@@ -758,23 +780,21 @@ function renderContacts() {
     if (contact.email) {
       html += `<div class="contact-detail"><strong>Email:</strong> ${escapeHtml(contact.email)}</div>`;
     }
+    
     if (contact.debts && contact.debts.length > 0) {
-  contact.debts.forEach(debt => {
-    const direction = debt.direction === 'i_owe_them' ? 'You owe' : 'They owe you';
-    html += `<div class="contact-detail"><strong>💰 ${direction}:</strong> $${debt.amount}</div>`;
-  });
-}
-
-if (contact.reminders && contact.reminders.length > 0) {
-  html += `<div class="contact-detail"><strong>📅 Reminder:</strong> ${escapeHtml(contact.reminders[0].text)}</div>`;
-}
-
-if (contact.paymentMethods && contact.paymentMethods.length > 0) {
-  contact.paymentMethods.forEach(pm => {
-    const username = pm.username ? `: ${pm.username}` : '';
-    html += `<div class="contact-detail"><strong>💳 ${pm.type}${username}</strong></div>`;
-  });
-}
+      contact.debts.forEach(debt => {
+        const direction = debt.direction === 'i_owe_them' ? 'You owe' : 'They owe you';
+        const badgeClass = debt.direction === 'i_owe_them' ? 'owe-them' : 'owe-me';
+        html += `<span class="debt-badge ${badgeClass}">💰 ${direction}: $${debt.amount}</span>`;
+      });
+    }
+    
+    if (contact.paymentMethods && contact.paymentMethods.length > 0) {
+      contact.paymentMethods.forEach(pm => {
+        const username = pm.username ? `: ${pm.username}` : '';
+        html += `<span class="payment-badge ${pm.type}">💳 ${pm.type}${username}</span>`;
+      });
+    }
     
     card.innerHTML = html;
     grid.appendChild(card);
@@ -872,6 +892,74 @@ async function submitQuickAdd() {
     await syncContacts([newContact]);
     addBotMessage(`Added ${name}!`);
   }
+  // ========================================
+// DELETE & EDIT FUNCTIONS
+// ========================================
+
+async function deleteContact(contactId) {
+  if (!confirm('Delete this contact?')) return;
   
+  try {
+    const response = await fetch(`${CONFIG.API_URL}/api/contacts/${contactId}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${authToken}`
+      }
+    });
+    
+    if (response.ok) {
+      contacts = contacts.filter(c => c.id !== contactId);
+      updateContactCount();
+      renderContacts();
+      addBotMessage('Contact deleted!');
+    } else {
+      addBotMessage('Failed to delete contact.');
+    }
+  } catch (error) {
+    console.error('Delete error:', error);
+    addBotMessage('Error deleting contact.');
+  }
+}
+
+function editContact(contactId) {
+  const contact = contacts.find(c => c.id === contactId);
+  if (!contact) return;
+  
+  // Populate edit modal
+  document.getElementById('edit-contact-id').value = contact.id;
+  document.getElementById('edit-name').value = contact.name || '';
+  document.getElementById('edit-phone').value = contact.phone || '';
+  document.getElementById('edit-email').value = contact.email || '';
+  document.getElementById('edit-skills').value = (contact.skills || []).join(', ');
+  
+  // Show modal
+  document.getElementById('edit-modal').classList.remove('hidden');
+}
+
+function closeEditModal() {
+  document.getElementById('edit-modal').classList.add('hidden');
+}
+
+async function submitEdit() {
+  const contactId = document.getElementById('edit-contact-id').value;
+  const contact = contacts.find(c => c.id === contactId);
+  if (!contact) return;
+  
+  // Update contact data
+  contact.name = document.getElementById('edit-name').value.trim().toLowerCase();
+  contact.phone = document.getElementById('edit-phone').value.trim() || null;
+  contact.email = document.getElementById('edit-email').value.trim() || null;
+  contact.skills = document.getElementById('edit-skills').value
+    .split(',')
+    .map(s => s.trim())
+    .filter(s => s);
+  contact.updatedAt = new Date().toISOString();
+  
+  // Sync to server
+  await syncContacts([contact]);
+  
+  closeEditModal();
+  addBotMessage(`Updated ${contact.name}!`);
+}
   closeQuickAdd();
 }

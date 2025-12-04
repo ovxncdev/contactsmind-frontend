@@ -635,7 +635,54 @@ body {
   background: var(--bg-card-hover);
   color: var(--text-primary);
 }
+/* ========================================
+   CONTACT CARD HEADER & ACTIONS
+   ======================================== */
+.contact-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 8px;
+}
 
+.contact-card-header .contact-name {
+  margin-bottom: 0;
+}
+
+.contact-actions {
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.contact-card:hover .contact-actions {
+  opacity: 1;
+}
+
+.icon-btn-sm {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.icon-btn-sm:hover {
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
+}
+
+.icon-btn-sm.delete:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+}
 /* ========================================
    FORM ELEMENTS
    ======================================== */
