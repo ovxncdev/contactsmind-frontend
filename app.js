@@ -741,21 +741,23 @@ function renderContacts() {
   if (countText) countText.textContent = `${contacts.length} contact${contacts.length !== 1 ? 's' : ''}`;
   
   grid.innerHTML = '';
-  contacts.forEach(contact => {
+  contacts.forEach((contact, index) => {
     const card = document.createElement('div');
     card.className = 'contact-card';
+    
+    const contactId = contact._id || contact.id;
     
     let html = `
       <div class="contact-card-header">
         <h3 class="contact-name">${escapeHtml(contact.name)}</h3>
         <div class="contact-actions">
-          <button class="icon-btn-sm" onclick="editContact(&quot;${contact._id || contact.id}&quot;)" title="Edit">
+          <button class="icon-btn-sm edit-btn" data-index="${index}" title="Edit">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
               <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
             </svg>
           </button>
-          <button class="icon-btn-sm delete" onclick="deleteContact(&quot;${contact._id || contact.id}&quot;)" title="Delete">
+          <button class="icon-btn-sm delete delete-btn" data-index="${index}" title="Delete">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="3 6 5 6 21 6"></polyline>
               <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
@@ -798,6 +800,23 @@ function renderContacts() {
     
     card.innerHTML = html;
     grid.appendChild(card);
+  });
+  
+  // Add event listeners after rendering
+  document.querySelectorAll('.edit-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const index = e.currentTarget.dataset.index;
+      const contact = contacts[index];
+      if (contact) editContact(contact._id || contact.id);
+    });
+  });
+  
+  document.querySelectorAll('.delete-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const index = e.currentTarget.dataset.index;
+      const contact = contacts[index];
+      if (contact) deleteContact(contact._id || contact.id);
+    });
   });
 }
 
