@@ -516,7 +516,7 @@ async function sendMessage() {
       if (newInfo.debts) existing.debts = [...(existing.debts || []), ...newInfo.debts];
       if (newInfo.reminders) existing.reminders = [...(existing.reminders || []), ...newInfo.reminders];
       if (newInfo.paymentMethods) existing.paymentMethods = [...(existing.paymentMethods || []), ...newInfo.paymentMethods];
-      
+
       existing.updatedAt = new Date().toISOString();
       
       await syncContacts([existing]);
@@ -549,51 +549,58 @@ async function sendMessage() {
   const isQuery = queryWords.some(word => text.toLowerCase().includes(word));
   
   if (isQuery && contacts.length > 0) {
-    // Check for debt queries
-    if (text.toLowerCase().match(/how much.*owe|what.*owe|who.*owe/)) {
-      const debts = contacts.filter(c => c.debts && c.debts.length > 0);
-      
-      if (debts.length > 0) {
-        let response = 'Here are your debts:\n\n';
-        debts.forEach(contact => {
-          response += `**${contact.name.toUpperCase()}**\n`;
-          contact.debts.forEach(debt => {
-            const direction = debt.direction === 'i_owe_them' ? 'You owe' : 'They owe you';
-            response += `${direction}: $${debt.amount}\n`;
-          });
-          response += '\n';
+    // Use AI for smart search
+    if (navigator.onLine) {
+        try {
+        const searchResult = await fetch(`${CONFIG.API_URL}/api/contacts/search-ai`, {
+            method: 'POST',
+            headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+            },
+            body: JSON.stringify({ query: text, contacts: contacts })
         });
-        addBotMessage(response);
-      } else {
-        addBotMessage("No debts recorded!");
-      }
-    } else {
-      // Regular search
-      const results = searchContacts(text);
-      
-      if (results.length > 0) {
+        
+        if (searchResult.ok) {
+            const data = await searchResult.json();
+            addBotMessage(data.response);
+            hideLoading();
+            isProcessing = false;
+            return;
+        }
+        } catch (err) {
+        console.log('AI search failed, using local search');
+        }
+    }
+    
+    // Fallback to local search
+    const results = searchContacts(text);
+    
+    if (results.length > 0) {
         let response = `Found ${results.length} match${results.length > 1 ? 'es' : ''}:\n\n`;
         results.forEach(contact => {
-          response += `**${contact.name.toUpperCase()}**\n`;
-          if (contact.skills && contact.skills.length > 0) {
+        response += `**${contact.name.toUpperCase()}**\n`;
+        if (contact.skills && contact.skills.length > 0) {
             response += `Skills: ${contact.skills.join(', ')}\n`;
-          }
-          if (contact.phone) response += `Phone: ${contact.phone}\n`;
-          if (contact.email) response += `Email: ${contact.email}\n`;
-          if (contact.debts && contact.debts.length > 0) {
+        }
+        if (contact.phone) response += `Phone: ${contact.phone}\n`;
+        if (contact.email) response += `Email: ${contact.email}\n`;
+        if (contact.paymentMethods && contact.paymentMethods.length > 0) {
+            response += `Payment: ${contact.paymentMethods.map(p => p.type).join(', ')}\n`;
+        }
+        if (contact.debts && contact.debts.length > 0) {
             contact.debts.forEach(debt => {
-              const dir = debt.direction === 'i_owe_them' ? 'You owe' : 'They owe you';
-              response += `${dir}: $${debt.amount}\n`;
+            const dir = debt.direction === 'i_owe_them' ? 'You owe' : 'They owe you';
+            response += `${dir}: $${debt.amount}\n`;
             });
-          }
-          response += '\n';
+        }
+        response += '\n';
         });
         addBotMessage(response);
-      } else {
-        addBotMessage("No matches found. Try adding more contacts!");
-      }
+    } else {
+        addBotMessage("No matches found. Try a different search!");
     }
-  } else {
+    } else {
     // Parse new contact
     const parsed = await parseContactHybrid(text);
     
