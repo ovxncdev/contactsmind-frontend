@@ -965,7 +965,7 @@ function closeEditModal() {
 
 async function submitEdit() {
   const contactId = document.getElementById('edit-contact-id').value;
-  const contact = contacts.find(c => c.id === contactId);
+  const contact = contacts.find(c => (c._id || c.id) === contactId);
   if (!contact) return;
   
   // Update contact data
