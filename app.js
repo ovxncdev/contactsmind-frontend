@@ -545,9 +545,31 @@ async function sendMessage() {
   }
   
   // Check if query
-  const queryWords = ['who does', 'who is', 'find', 'search', 'show me', 'get', 'list', 'how much', 'what do i owe'];
-  const isQuery = queryWords.some(word => text.toLowerCase().includes(word));
-  
+  let isQuery = false;
+    if (navigator.onLine && contacts.length > 0) {
+    try {
+        const intentResponse = await fetch(`${CONFIG.API_URL}/api/detect-intent`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+        },
+        body: JSON.stringify({ text })
+        });
+        
+        if (intentResponse.ok) {
+        const intentData = await intentResponse.json();
+        isQuery = intentData.intent === 'query';
+        console.log('🧠 AI Intent:', intentData.intent);
+        }
+    } catch (err) {
+        console.log('Intent detection failed, using fallback');
+        // Fallback to keyword matching
+        const queryWords = ['who', 'find', 'search', 'show', 'list', 'how much', 'owe', '?'];
+        isQuery = queryWords.some(word => text.toLowerCase().includes(word));
+    }
+    }
+ 
   if (isQuery && contacts.length > 0) {
     // Use AI for smart search
     if (navigator.onLine) {
