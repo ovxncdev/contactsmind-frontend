@@ -10,6 +10,10 @@ let pendingConfirmation = null; // For duplicate detection
 
 // Initialize
 function init() {
+    // Initialize PostHog
+    if (CONFIG.POSTHOG_KEY && CONFIG.POSTHOG_KEY !== 'your_posthog_api_key_here') {
+    posthog.init(CONFIG.POSTHOG_KEY, { api_host: 'https://app.posthog.com' });
+    }
   // Check if logged in
   if (!authToken) {
     window.location.href = CONFIG.AUTH_PAGE;
@@ -35,6 +39,14 @@ async function verifyToken() {
       currentUser = await response.json();
       await loadContacts();
       addBotMessage(`Welcome back! You have ${contacts.length} contacts saved.`);
+      // Identify user in PostHog
+    if (window.posthog) {
+    posthog.identify(currentUser.email, {
+        name: currentUser.name,
+        plan: currentUser.plan
+    });
+    }
+    trackEvent('app_opened', { contactCount: contacts.length });
     } else {
       // Token invalid, redirect to login
       localStorage.removeItem(CONFIG.STORAGE_KEYS.AUTH_TOKEN);
@@ -620,6 +632,7 @@ async function sendMessage() {
         response += '\n';
         });
         addBotMessage(response);
+        
     } else {
         addBotMessage("No matches found. Try a different search!");
     }
@@ -662,6 +675,7 @@ async function sendMessage() {
           if (stats.created > 0) response += `Added ${newContact.name}.`;
           if (stats.updated > 0) response += `Updated info.`;
           addBotMessage(response);
+          trackEvent('contact_added', { name: newContact.name });
         } else {
           addBotMessage("Saved locally. Will sync when connection is available.");
         }
@@ -932,10 +946,11 @@ async function deleteContact(contactId) {
     });
     
     if (response.ok) {
-      contacts = contacts.filter(c => c.id !== contactId);
+      contacts = contacts.filter(c => (c._id || c.id) !== contactId);
       updateContactCount();
       renderContacts();
       addBotMessage('Contact deleted!');
+      trackEvent('contact_deleted');
     } else {
       addBotMessage('Failed to delete contact.');
     }
@@ -996,6 +1011,8 @@ try {
     const index = contacts.findIndex(c => (c._id || c.id) === contactId);
     if (index !== -1) contacts[index] = updated;
     renderContacts();
+    trackEvent('contact_edited', { name: contact.name });
+
   }
 } catch (error) {
   console.error('Update error:', error);
@@ -1078,6 +1095,88 @@ function handleTouchEnd(e) {
   touchStartX = 0;
   touchCurrentX = 0;
 }
+// ========================================
+// FEEDBACK & ANALYTICS
+// ========================================
+
+let selectedRating = 0;
+
+function openFeedback() {
+  document.getElementById('feedback-modal').classList.remove('hidden');
+  
+  // Track modal open
+  if (window.posthog) {
+    posthog.capture('feedback_modal_opened');
+  }
+  
+  // Setup rating buttons
+  document.querySelectorAll('.rating-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.rating-btn').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      selectedRating = parseInt(btn.dataset.rating);
+    });
+  });
+}
+
+function closeFeedback() {
+  document.getElementById('feedback-modal').classList.add('hidden');
+  selectedRating = 0;
+  document.getElementById('feedback-text').value = '';
+  document.querySelectorAll('.rating-btn').forEach(b => b.classList.remove('selected'));
+}
+
+async function submitFeedback() {
+  const text = document.getElementById('feedback-text').value.trim();
+  const type = document.getElementById('feedback-type').value;
+  
+  if (!selectedRating && !text) {
+    alert('Please rate your experience or leave a comment!');
+    return;
+  }
+  
+  const feedback = {
+    rating: selectedRating,
+    text: text,
+    type: type,
+    timestamp: new Date().toISOString(),
+    userEmail: currentUser?.email || 'anonymous',
+    contactCount: contacts.length
+  };
+  
+  // Send to PostHog
+  if (window.posthog) {
+    posthog.capture('feedback_submitted', feedback);
+  }
+  
+  // Also send to backend (optional)
+  try {
+    await fetch(`${CONFIG.API_URL}/api/feedback`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken}`
+      },
+      body: JSON.stringify(feedback)
+    });
+  } catch (err) {
+    console.log('Feedback saved to PostHog');
+  }
+  
+  closeFeedback();
+  addBotMessage('Thanks for your feedback! 💜');
+}
+
+// Track key events with PostHog
+function trackEvent(eventName, properties = {}) {
+  if (window.posthog) {
+    posthog.capture(eventName, {
+      ...properties,
+      user_email: currentUser?.email
+    });
+  }
+}
+
 
 // ========================================
 // MOBILE UX: PULL TO REFRESH

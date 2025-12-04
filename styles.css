@@ -819,6 +819,60 @@ textarea.form-input {
   align-items: center;
   justify-content: center;
 }
+/* Feedback Rating */
+.rating-buttons {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.rating-btn {
+  flex: 1;
+  padding: 12px;
+  font-size: 24px;
+  background: var(--bg-tertiary);
+  border: 2px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.rating-btn:hover {
+  background: var(--bg-secondary);
+}
+
+.rating-btn.selected {
+  border-color: var(--accent);
+  background: rgba(139, 92, 246, 0.2);
+}
+
+/* Feedback textarea */
+#feedback-text {
+  width: 100%;
+  padding: 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-family: inherit;
+  resize: vertical;
+}
+
+#feedback-text:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* Feedback select */
+#feedback-type {
+  width: 100%;
+  padding: 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-family: inherit;
+}
 
 /* Smooth scrolling */
 .contacts-view,

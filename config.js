@@ -18,5 +18,6 @@ const CONFIG = {
     AUTH_TOKEN: 'authToken',
     CURRENT_USER: 'currentUser',
     CONTACTS: 'contacts'
-  }
+  },
+  POSTHOG_KEY: 'your_posthog_api_key_here'
 };
