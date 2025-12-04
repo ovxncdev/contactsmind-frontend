@@ -892,7 +892,10 @@ async function submitQuickAdd() {
     await syncContacts([newContact]);
     addBotMessage(`Added ${name}!`);
   }
-  // ========================================
+  
+  closeQuickAdd();
+}
+// ========================================
 // DELETE & EDIT FUNCTIONS
 // ========================================
 
@@ -960,6 +963,4 @@ async function submitEdit() {
   
   closeEditModal();
   addBotMessage(`Updated ${contact.name}!`);
-}
-  closeQuickAdd();
 }
