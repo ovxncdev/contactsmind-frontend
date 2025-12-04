@@ -944,11 +944,11 @@ async function deleteContact(contactId) {
 }
 
 function editContact(contactId) {
-  const contact = contacts.find(c => c.id === contactId);
+  const contact = contacts.find(c => (c._id || c.id) === contactId);
   if (!contact) return;
   
   // Populate edit modal
-  document.getElementById('edit-contact-id').value = contact.id;
+  document.getElementById('edit-contact-id').value = contact._id || contact.id;
   document.getElementById('edit-name').value = contact.name || '';
   document.getElementById('edit-phone').value = contact.phone || '';
   document.getElementById('edit-email').value = contact.email || '';
