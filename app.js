@@ -48,6 +48,7 @@ async function verifyToken() {
 
 function setupEventListeners() {
   // Enter key for message input
+  document.getElementById('save-edit-btn')?.addEventListener('click', submitEdit);
   document.getElementById('message-input')?.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') sendMessage();
   });
