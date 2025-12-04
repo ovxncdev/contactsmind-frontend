@@ -659,7 +659,10 @@ body {
 .contact-card:hover .contact-actions {
   opacity: 1;
 }
-
+.icon-btn-sm svg,
+.icon-btn-sm * {
+  pointer-events: none;
+}
 .icon-btn-sm {
   width: 28px;
   height: 28px;
