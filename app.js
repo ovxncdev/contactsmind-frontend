@@ -1027,6 +1027,7 @@ function handleTouchStart(e) {
   if (!card) return;
   
   touchStartX = e.touches[0].clientX;
+  touchCurrentX = 0;
   swipingCard = card;
 }
 
@@ -1050,7 +1051,8 @@ function handleTouchEnd(e) {
   
   const diffX = touchStartX - touchCurrentX;
   
-  if (diffX > SWIPE_THRESHOLD) {
+  // Only trigger delete if actually swiped (not just tapped)
+  if (diffX > SWIPE_THRESHOLD && touchCurrentX !== 0) {
     // Trigger delete
     const index = swipingCard.dataset.index;
     const contact = contacts[index];
@@ -1069,9 +1071,9 @@ function handleTouchEnd(e) {
   } else {
     // Reset position
     swipingCard.style.transform = '';
+    swipingCard.classList.remove('swiping');
   }
   
-  swipingCard.classList.remove('swiping');
   swipingCard = null;
   touchStartX = 0;
   touchCurrentX = 0;
