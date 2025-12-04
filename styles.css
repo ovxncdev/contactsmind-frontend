@@ -678,6 +678,12 @@ body {
   background: var(--bg-card-hover);
   color: var(--text-primary);
 }
+/* Mobile: Always show action buttons */
+@media (max-width: 768px) {
+  .contact-actions {
+    opacity: 1;
+  }
+}
 
 .icon-btn-sm.delete:hover {
   background: rgba(239, 68, 68, 0.2);
