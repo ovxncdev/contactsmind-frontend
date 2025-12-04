@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ContactsMind - AI Contact Manager</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <div class="header">
+      <h1 class="title">ContactsMind</h1>
+      <p class="subtitle">Your AI-powered contact memory</p>
+      
+      <div class="sync-status">
+        <div class="sync-dot online" id="sync-dot"></div>
+        <span id="sync-text">Connected</span>
+      </div>
+      
+      <div class="tabs">
+        <button class="tab active" onclick="switchView('chat')">💬 Chat</button>
+        <button class="tab" onclick="switchView('contacts')">
+          👥 Contacts (<span id="contact-count">0</span>)
+        </button>
+        <button class="tab" onclick="openQuickAdd()">➕ Quick Add</button>
+        <button class="tab logout-btn" onclick="handleLogout()">🚪 Logout</button>
+      </div>
+    </div>
+
+    <!-- Chat View -->
+    <div id="chat-view" class="content">
+      <div id="messages"></div>
+    </div>
+
+    <!-- Contacts View -->
+    <div id="contacts-view" class="content hidden">
+      <div id="contacts-grid" class="contacts-grid"></div>
+    </div>
+
+    <!-- Input Area -->
+    <div class="input-area">
+      <div class="input-container">
+        <input 
+          type="text" 
+          id="message-input" 
+          class="input" 
+          placeholder="Tell me about someone you know..."
+        />
+        <button class="send-btn" onclick="sendMessage()">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Quick Add Modal (OUTSIDE container for proper positioning) -->
+  <div id="quick-add-modal" class="modal hidden">
+    <div class="modal-content">
+      <h3>Quick Add Contact</h3>
+      <div class="form-group">
+        <label class="form-label">Name *</label>
+        <input type="text" id="qa-name" class="form-input" placeholder="John Smith">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Phone</label>
+        <input type="tel" id="qa-phone" class="form-input" placeholder="555-123-4567">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email</label>
+        <input type="email" id="qa-email" class="form-input" placeholder="john@example.com">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Skills (comma separated)</label>
+        <input type="text" id="qa-skills" class="form-input" placeholder="photography, design">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Notes</label>
+        <textarea id="qa-notes" class="form-input" rows="2" placeholder="Met at conference..."></textarea>
+      </div>
+      <div class="modal-buttons">
+        <button class="btn-secondary" onclick="closeQuickAdd()">Cancel</button>
+        <button class="btn-primary" onclick="submitQuickAdd()">Add Contact</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Load scripts -->
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
