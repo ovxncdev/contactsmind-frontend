@@ -745,6 +745,7 @@ function renderContacts() {
   contacts.forEach((contact, index) => {
     const card = document.createElement('div');
     card.className = 'contact-card';
+    card.dataset.index = index;
     
     const contactId = contact._id || contact.id;
     
@@ -979,8 +980,176 @@ async function submitEdit() {
   contact.updatedAt = new Date().toISOString();
   
   // Sync to server
-  await syncContacts([contact]);
+  // Update on server
+try {
+  const response = await fetch(`${CONFIG.API_URL}/api/contacts/${contactId}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${authToken}`
+    },
+    body: JSON.stringify(contact)
+  });
+  
+  if (response.ok) {
+    const updated = await response.json();
+    const index = contacts.findIndex(c => (c._id || c.id) === contactId);
+    if (index !== -1) contacts[index] = updated;
+    renderContacts();
+  }
+} catch (error) {
+  console.error('Update error:', error);
+}
   
   closeEditModal();
   addBotMessage(`Updated ${contact.name}!`);
 }
+// ========================================
+// MOBILE UX: SWIPE TO DELETE
+// ========================================
+
+let touchStartX = 0;
+let touchCurrentX = 0;
+let swipingCard = null;
+const SWIPE_THRESHOLD = 100;
+
+function initSwipeToDelete() {
+  const grid = document.getElementById('contacts-grid');
+  if (!grid) return;
+
+  grid.addEventListener('touchstart', handleTouchStart, { passive: true });
+  grid.addEventListener('touchmove', handleTouchMove, { passive: false });
+  grid.addEventListener('touchend', handleTouchEnd, { passive: true });
+}
+
+function handleTouchStart(e) {
+  const card = e.target.closest('.contact-card');
+  if (!card) return;
+  
+  touchStartX = e.touches[0].clientX;
+  swipingCard = card;
+}
+
+function handleTouchMove(e) {
+  if (!swipingCard) return;
+  
+  touchCurrentX = e.touches[0].clientX;
+  const diffX = touchStartX - touchCurrentX;
+  
+  // Only allow left swipe
+  if (diffX > 0) {
+    e.preventDefault();
+    const moveX = Math.min(diffX, 150);
+    swipingCard.style.transform = `translateX(-${moveX}px)`;
+    swipingCard.classList.add('swiping');
+  }
+}
+
+function handleTouchEnd(e) {
+  if (!swipingCard) return;
+  
+  const diffX = touchStartX - touchCurrentX;
+  
+  if (diffX > SWIPE_THRESHOLD) {
+    // Trigger delete
+    const index = swipingCard.dataset.index;
+    const contact = contacts[index];
+    if (contact) {
+      // Vibrate if available
+      if (navigator.vibrate) navigator.vibrate(50);
+      
+      // Animate out
+      swipingCard.style.transform = 'translateX(-100%)';
+      swipingCard.style.opacity = '0';
+      
+      setTimeout(() => {
+        deleteContact(contact._id || contact.id);
+      }, 200);
+    }
+  } else {
+    // Reset position
+    swipingCard.style.transform = '';
+  }
+  
+  swipingCard.classList.remove('swiping');
+  swipingCard = null;
+  touchStartX = 0;
+  touchCurrentX = 0;
+}
+
+// ========================================
+// MOBILE UX: PULL TO REFRESH
+// ========================================
+
+let pullStartY = 0;
+let isPulling = false;
+const PULL_THRESHOLD = 80;
+
+function initPullToRefresh() {
+  const contactsView = document.getElementById('contacts-view');
+  if (!contactsView) return;
+  
+  // Add pull indicator
+  const pullIndicator = document.createElement('div');
+  pullIndicator.className = 'pull-to-refresh';
+  pullIndicator.innerHTML = `
+    <svg class="spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+    </svg>
+    <span class="pull-text">Pull to refresh</span>
+  `;
+  contactsView.insertBefore(pullIndicator, contactsView.firstChild);
+  
+  contactsView.addEventListener('touchstart', (e) => {
+    if (contactsView.scrollTop === 0) {
+      pullStartY = e.touches[0].clientY;
+      isPulling = true;
+    }
+  }, { passive: true });
+  
+  contactsView.addEventListener('touchmove', (e) => {
+    if (!isPulling) return;
+    
+    const pullDistance = e.touches[0].clientY - pullStartY;
+    
+    if (pullDistance > 0 && contactsView.scrollTop === 0) {
+      const pull = Math.min(pullDistance * 0.5, 100);
+      pullIndicator.style.transform = `translateY(${pull}px)`;
+      
+      if (pull > PULL_THRESHOLD) {
+        pullIndicator.querySelector('.pull-text').textContent = 'Release to refresh';
+      } else {
+        pullIndicator.querySelector('.pull-text').textContent = 'Pull to refresh';
+      }
+    }
+  }, { passive: true });
+  
+  contactsView.addEventListener('touchend', async () => {
+    if (!isPulling) return;
+    
+    const pullIndicatorEl = document.querySelector('.pull-to-refresh');
+    const currentPull = parseFloat(pullIndicatorEl.style.transform.replace(/[^0-9.-]/g, '')) || 0;
+    
+    if (currentPull > PULL_THRESHOLD) {
+      // Trigger refresh
+      pullIndicatorEl.classList.add('refreshing');
+      pullIndicatorEl.querySelector('.pull-text').textContent = 'Refreshing...';
+      
+      if (navigator.vibrate) navigator.vibrate(30);
+      
+      await loadContacts();
+      
+      pullIndicatorEl.classList.remove('refreshing');
+    }
+    
+    pullIndicatorEl.style.transform = '';
+    isPulling = false;
+    pullStartY = 0;
+  }, { passive: true });
+}
+
+// Initialize mobile UX on load
+document.addEventListener('DOMContentLoaded', () => {
+  initSwipeToDelete();
+  initPullToRefresh();
+});

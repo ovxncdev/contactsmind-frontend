@@ -732,6 +732,118 @@ textarea.form-input {
   min-height: 80px;
   resize: vertical;
 }
+/* ========================================
+   MOBILE UX ENHANCEMENTS
+   ======================================== */
+
+/* Swipe to delete */
+.contact-card {
+  position: relative;
+  overflow: hidden;
+  touch-action: pan-y;
+  transition: transform 0.2s ease;
+}
+
+.contact-card.swiping {
+  transition: none;
+}
+
+.contact-card .swipe-delete-bg {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  background: linear-gradient(90deg, transparent 60%, #ef4444 100%);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 20px;
+  opacity: 0;
+  transition: opacity 0.2s;
+  pointer-events: none;
+}
+
+.contact-card.swiping .swipe-delete-bg {
+  opacity: 1;
+}
+
+.swipe-delete-bg svg {
+  color: white;
+  width: 24px;
+  height: 24px;
+}
+
+/* Pull to refresh */
+.pull-to-refresh {
+  position: absolute;
+  top: -50px;
+  left: 0;
+  right: 0;
+  height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  transition: transform 0.2s;
+}
+
+.pull-to-refresh.visible {
+  transform: translateY(50px);
+}
+
+.pull-to-refresh.refreshing .spinner {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.pull-to-refresh .spinner {
+  width: 20px;
+  height: 20px;
+  margin-right: 8px;
+}
+
+/* Better touch targets */
+.contact-card {
+  min-height: 70px;
+}
+
+.icon-btn-sm {
+  min-width: 44px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Smooth scrolling */
+.contacts-view,
+#contacts-grid {
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+}
+
+/* Active states for touch */
+.contact-card:active {
+  transform: scale(0.98);
+}
+
+.btn:active,
+.icon-btn:active,
+.icon-btn-sm:active {
+  transform: scale(0.95);
+  opacity: 0.8;
+}
+
+/* Prevent text selection on swipe */
+.contact-card * {
+  user-select: none;
+  -webkit-user-select: none;
+}
 
 /* ========================================
    BUTTONS
