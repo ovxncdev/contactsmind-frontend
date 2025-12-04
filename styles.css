@@ -678,10 +678,10 @@ body {
   background: var(--bg-card-hover);
   color: var(--text-primary);
 }
-/* Mobile: Always show action buttons */
-@media (max-width: 768px) {
+/* Mobile & Touch: Always show action buttons */
+@media (max-width: 768px), (hover: none) {
   .contact-actions {
-    opacity: 1;
+    opacity: 1 !important;
   }
 }
 
