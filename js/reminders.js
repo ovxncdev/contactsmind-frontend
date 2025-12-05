@@ -16,6 +16,13 @@ function openRemindersModal(contactId) {
   document.getElementById('reminder-notes').value = '';
   
   renderRemindersList(contact);
+  // Show/hide calendar checkbox
+  const calendarGroup = document.getElementById('calendar-checkbox-group');
+  if (calendarGroup) {
+    calendarGroup.style.display = Calendar.connected ? 'block' : 'none';
+  }
+  
+  
   document.getElementById('reminders-modal').classList.remove('hidden');
 }
 
@@ -120,4 +127,55 @@ async function deleteReminder(index) {
   renderContacts();
   
   Analytics.track('reminder_deleted');
+}
+
+async function addReminder(contactId) {
+  const contact = contacts.find(c => (c._id || c.id) === contactId);
+  if (!contact) return;
+  
+  const title = document.getElementById('reminder-title').value.trim();
+  const date = document.getElementById('reminder-date').value;
+  const time = document.getElementById('reminder-time').value || '09:00';
+  const notes = document.getElementById('reminder-notes').value.trim();
+  const addToCalendar = document.getElementById('reminder-add-calendar')?.checked;
+  
+  if (!title || !date) {
+    alert('Title and date are required!');
+    return;
+  }
+  
+  const reminder = {
+    id: `rem-${Date.now()}`,
+    title,
+    date,
+    time,
+    notes,
+    createdAt: new Date().toISOString()
+  };
+  
+  // Add to Google Calendar if checked
+  if (addToCalendar && Calendar.connected) {
+    const result = await Calendar.addToCalendar(reminder, contact.name);
+    if (result) {
+      reminder.calendarEventId = result.eventId;
+    }
+  }
+  
+  contact.reminders = contact.reminders || [];
+  contact.reminders.push(reminder);
+  contact.reminders.sort((a, b) => new Date(a.date) - new Date(b.date));
+  
+  await saveContact(contact);
+  
+  Analytics.track('reminder_added', { addedToCalendar: !!addToCalendar });
+  
+  renderRemindersList(contactId);
+  
+  // Clear form
+  document.getElementById('reminder-title').value = '';
+  document.getElementById('reminder-date').value = '';
+  document.getElementById('reminder-time').value = '';
+  document.getElementById('reminder-notes').value = '';
+  
+  addBotMessage(`Reminder set for ${contact.name}!${addToCalendar && Calendar.connected ? ' Added to calendar.' : ''}`);
 }
