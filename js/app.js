@@ -4,6 +4,7 @@ let authToken = localStorage.getItem('authToken');
 let currentUser = null;
 
 function init() {
+  console.log('🚀 Init started');
   Analytics.init();
   NetworkStatus.init();
   
@@ -17,8 +18,11 @@ function init() {
 }
 
 async function verifyToken() {
+  console.log('🔑 Verifying token...');
+  
   if (!navigator.onLine) {
     contacts = OfflineCache.get();
+    console.log('📴 Offline - loaded from cache:', contacts.length);
     updateContactCount();
     renderContacts();
     const lastUpdated = OfflineCache.getLastUpdated();
@@ -34,6 +38,7 @@ async function verifyToken() {
 
     if (response.ok) {
       currentUser = await response.json();
+      console.log('✅ User verified:', currentUser.email);
       Analytics.identify(currentUser);
       Analytics.track('app_opened');
       await loadContacts();
@@ -44,6 +49,7 @@ async function verifyToken() {
         addBotMessage(`Welcome back! You have ${contacts.length} contacts.`);
       }
     } else {
+      console.log('❌ Token invalid, redirecting...');
       localStorage.removeItem(CONFIG.STORAGE_KEYS.AUTH_TOKEN);
       localStorage.removeItem(CONFIG.STORAGE_KEYS.CURRENT_USER);
       window.location.replace(CONFIG.AUTH_PAGE);
@@ -77,4 +83,10 @@ function setupEventListeners() {
   });
 }
 
-document.addEventListener('DOMContentLoaded', init);
+// Run init - check if DOM is already ready or wait for it
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  // DOM already loaded, run init immediately
+  init();
+}
