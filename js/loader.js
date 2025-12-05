@@ -18,21 +18,37 @@
     'js/app.js'
   ];
 
+  let loadedCount = 0;
+
   function loadScript(src) {
     return new Promise((resolve, reject) => {
       const script = document.createElement('script');
       script.src = src;
-      script.onload = resolve;
-      script.onerror = reject;
+      script.onload = () => {
+        loadedCount++;
+        console.log(`✅ Loaded (${loadedCount}/${scripts.length}): ${src}`);
+        resolve();
+      };
+      script.onerror = (e) => {
+        console.error(`❌ Failed to load: ${src}`, e);
+        reject(e);
+      };
       document.head.appendChild(script);
     });
   }
 
   async function loadAll() {
+    console.log('🚀 Starting to load scripts...');
     for (const src of scripts) {
-      await loadScript(src);
+      try {
+        await loadScript(src);
+      } catch (e) {
+        console.error('Stopped loading due to error');
+        return;
+      }
     }
+    console.log('✅ All scripts loaded!');
   }
 
-  loadAll().catch(err => console.error('Failed to load scripts:', err));
+  loadAll();
 })();
