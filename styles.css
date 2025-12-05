@@ -215,7 +215,27 @@
   flex: 1;
 }
 
+/* ========================================
+   CHAT ACTION BUTTONS
+   ======================================== */
+.chat-action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
 
+.chat-action-buttons .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  font-size: 12px;
+}
+
+.chat-action-buttons .btn svg {
+  flex-shrink: 0;
+}
 
 /* ========================================
    RESET & BASE

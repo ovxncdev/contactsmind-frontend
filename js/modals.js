@@ -1,5 +1,10 @@
 // modals.js - Modal Management
 
+let editingContactId = null;
+let importedContacts = [];
+
+// ============== QUICK ADD ==============
+
 function openQuickAdd() {
   Analytics.track('quick_add_opened');
   document.getElementById('quick-add-modal').classList.remove('hidden');
@@ -12,82 +17,122 @@ function closeQuickAdd() {
   document.getElementById('qa-phone').value = '';
   document.getElementById('qa-email').value = '';
   document.getElementById('qa-skills').value = '';
-  document.getElementById('qa-notes').value = '';
+}
+
+function openQuickAddWithText(prefillText) {
+  openQuickAdd();
+  
+  // Try to extract a name from the text
+  const words = prefillText.split(/\s+/);
+  let possibleName = '';
+  
+  // Take first 1-3 words as possible name
+  for (let i = 0; i < Math.min(3, words.length); i++) {
+    const word = words[i].replace(/[^a-zA-Z\s]/g, '').trim();
+    if (word && !['met', 'saw', 'called', 'add', 'new', 'contact', 'the', 'a', 'an'].includes(word.toLowerCase())) {
+      possibleName += (possibleName ? ' ' : '') + word;
+    }
+  }
+  
+  // Prefill the name field
+  const nameInput = document.getElementById('qa-name');
+  if (nameInput && possibleName) {
+    nameInput.value = possibleName.toLowerCase();
+  }
+  
+  // Try to extract phone
+  const phoneMatch = prefillText.match(/(\d{3}[-.\s]?\d{3}[-.\s]?\d{4}|\d{10,11})/);
+  if (phoneMatch) {
+    const phoneInput = document.getElementById('qa-phone');
+    if (phoneInput) phoneInput.value = phoneMatch[1];
+  }
+  
+  // Try to extract email
+  const emailMatch = prefillText.match(/([a-z0-9._-]+@[a-z0-9.-]+\.[a-z]{2,})/i);
+  if (emailMatch) {
+    const emailInput = document.getElementById('qa-email');
+    if (emailInput) emailInput.value = emailMatch[1];
+  }
+  
+  // Try to extract skills
+  const skillPatterns = [
+    /does\s+(.+?)(?:\.|,|$)/i,
+    /is\s+(?:a|an)\s+(.+?)(?:\.|,|$)/i,
+    /works\s+(?:in|with|on|as|at)\s+(.+?)(?:\.|,|$)/i,
+  ];
+  
+  for (const pattern of skillPatterns) {
+    const match = prefillText.match(pattern);
+    if (match) {
+      const skillInput = document.getElementById('qa-skills');
+      if (skillInput) skillInput.value = match[1].trim();
+      break;
+    }
+  }
 }
 
 async function submitQuickAdd() {
-  const name = document.getElementById('qa-name').value.trim().toLowerCase();
-  const phone = document.getElementById('qa-phone').value.trim() || null;
-  const email = document.getElementById('qa-email').value.trim() || null;
-  const skillsText = document.getElementById('qa-skills').value.trim();
-  const notesText = document.getElementById('qa-notes').value.trim();
+  let name = document.getElementById('qa-name').value.trim().toLowerCase();
+  let phone = document.getElementById('qa-phone').value.trim() || null;
+  let email = document.getElementById('qa-email').value.trim() || null;
+  let skillsInput = document.getElementById('qa-skills').value.trim();
   
   // Security: Sanitize inputs
-  name = Security.sanitize(name);
-
-
+  if (typeof Security !== 'undefined') {
+    name = Security.sanitize(name);
+    if (phone) phone = Security.sanitize(phone);
+    if (email) email = Security.sanitize(email);
+    if (skillsInput) skillsInput = Security.sanitize(skillsInput);
+  }
+  
   if (!name) {
     alert('Name is required!');
     return;
   }
-   // Validate email if provided
-  if (email && !Security.isValidEmail(email)) {
+  
+  // Validate email if provided
+  if (email && typeof Security !== 'undefined' && !Security.isValidEmail(email)) {
     alert('Please enter a valid email address');
     return;
   }
   
   // Validate phone if provided
-  if (phone && !Security.isValidPhone(phone)) {
+  if (phone && typeof Security !== 'undefined' && !Security.isValidPhone(phone)) {
     alert('Please enter a valid phone number');
     return;
   }
   
-  const skills = skillsText ? skillsText.split(',').map(s => s.trim()).filter(s => s) : [];
-  const notes = notesText ? [{ text: notesText, date: new Date().toISOString() }] : [];
+  const skills = skillsInput ? skillsInput.split(',').map(s => s.trim()).filter(s => s) : [];
   
   const newContact = {
     id: `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-    name, skills, phone, email, notes,
-    debts: [], reminders: [], metadata: {},
+    name,
+    phone,
+    email,
+    skills,
+    notes: [],
+    debts: [],
+    reminders: [],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
   
-  const similar = findSimilarContacts(name);
-  
-  if (similar.length > 0 && similar[0].similarity >= 0.7) {
-    const merge = confirm(`Similar contact "${similar[0].contact.name}" exists. Merge info?`);
-    if (merge) {
-      const existing = similar[0].contact;
-      if (phone && !existing.phone) existing.phone = phone;
-      if (email && !existing.email) existing.email = email;
-      existing.skills = [...new Set([...existing.skills, ...skills])];
-      existing.notes = [...existing.notes, ...notes];
-      existing.updatedAt = new Date().toISOString();
-      await syncContacts([existing]);
-      Analytics.track('contact_merged', { name: existing.name });
-      addBotMessage(`Updated ${existing.name}!`);
-    } else {
-      await syncContacts([newContact]);
-      Analytics.track('contact_added', { name: newContact.name });
-      addBotMessage(`Added ${name}!`);
-    }
-  } else {
-    await syncContacts([newContact]);
-    Analytics.track('contact_added', { name: newContact.name });
-    addBotMessage(`Added ${name}!`);
-  }
+  await syncContacts([newContact]);
+  Analytics.track('contact_added', { method: 'quick_add' });
   
   closeQuickAdd();
+  addBotMessage(`Added **${name}**!`);
 }
+
+// ============== EDIT CONTACT ==============
 
 function editContact(contactId) {
   const contact = contacts.find(c => (c._id || c.id) === contactId);
   if (!contact) return;
   
-  Analytics.track('contact_edit_opened');
+  editingContactId = contactId;
+  Analytics.track('edit_contact_opened');
   
-  document.getElementById('edit-contact-id').value = contactId;
   document.getElementById('edit-name').value = contact.name || '';
   document.getElementById('edit-phone').value = contact.phone || '';
   document.getElementById('edit-email').value = contact.email || '';
@@ -98,26 +143,48 @@ function editContact(contactId) {
 
 function closeEditModal() {
   document.getElementById('edit-modal').classList.add('hidden');
+  editingContactId = null;
 }
 
 async function submitEdit() {
-  const contactId = document.getElementById('edit-contact-id').value;
-  const contact = contacts.find(c => (c._id || c.id) === contactId);
+  if (!editingContactId) return;
+  
+  const contact = contacts.find(c => (c._id || c.id) === editingContactId);
   if (!contact) return;
   
-  contact.name = document.getElementById('edit-name').value.trim().toLowerCase();
-  contact.phone = document.getElementById('edit-phone').value.trim() || null;
-  contact.email = document.getElementById('edit-email').value.trim() || null;
-  contact.skills = document.getElementById('edit-skills').value.split(',').map(s => s.trim()).filter(s => s);
+  let name = document.getElementById('edit-name').value.trim().toLowerCase();
+  let phone = document.getElementById('edit-phone').value.trim() || null;
+  let email = document.getElementById('edit-email').value.trim() || null;
+  let skillsInput = document.getElementById('edit-skills').value.trim();
+  
+  // Security: Sanitize inputs
+  if (typeof Security !== 'undefined') {
+    name = Security.sanitize(name);
+    if (phone) phone = Security.sanitize(phone);
+    if (email) email = Security.sanitize(email);
+    if (skillsInput) skillsInput = Security.sanitize(skillsInput);
+  }
+  
+  if (!name) {
+    alert('Name is required!');
+    return;
+  }
+  
+  contact.name = name;
+  contact.phone = phone;
+  contact.email = email;
+  contact.skills = skillsInput ? skillsInput.split(',').map(s => s.trim()).filter(s => s) : [];
   contact.updatedAt = new Date().toISOString();
   
   await saveContact(contact);
   renderContacts();
-  closeEditModal();
   
   Analytics.track('contact_edited');
-  addBotMessage(`Updated ${contact.name}!`);
+  closeEditModal();
+  addBotMessage(`Updated **${name}**!`);
 }
+
+// ============== FEEDBACK ==============
 
 function openFeedback() {
   Analytics.track('feedback_opened');
@@ -132,20 +199,17 @@ function closeFeedback() {
 
 async function submitFeedback() {
   const text = document.getElementById('feedback-text').value.trim();
-  const type = document.getElementById('feedback-type').value;
+  const ratingBtn = document.querySelector('.rating-btn.selected');
+  const rating = ratingBtn ? ratingBtn.dataset.rating : null;
   
-  let rating = 0;
-  document.querySelectorAll('.rating-btn.selected').forEach(btn => {
-    rating = parseInt(btn.dataset.rating);
-  });
-  
-  if (!rating && !text) {
-    alert('Please rate your experience or leave a comment!');
+  if (!text && !rating) {
+    alert('Please provide feedback or select a rating');
     return;
   }
   
-  Analytics.track('feedback_submitted', { rating, type });
+  Analytics.track('feedback_submitted', { rating, hasText: !!text });
   
+  // Send to backend if online
   if (navigator.onLine) {
     try {
       await fetch(`${CONFIG.API_URL}/api/feedback`, {
@@ -154,19 +218,18 @@ async function submitFeedback() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${authToken}`
         },
-        body: JSON.stringify({ rating, text, type, timestamp: new Date().toISOString() })
+        body: JSON.stringify({ text, rating })
       });
-    } catch (err) {
-      console.log('Feedback error:', err);
+    } catch (e) {
+      console.error('Feedback send error:', e);
     }
   }
   
   closeFeedback();
-  addBotMessage('Thanks for your feedback! 💜');
+  addBotMessage('Thanks for your feedback! 🙏');
 }
 
-// Export/Import Modals
-let importedContacts = [];
+// ============== EXPORT/IMPORT ==============
 
 function openExportModal() {
   Analytics.track('export_modal_opened');
@@ -307,12 +370,18 @@ async function confirmImport() {
   importedContacts = [];
 }
 
+// ============== LOGOUT ==============
+
 function handleLogout() {
-  if (confirm('Are you sure you want to logout?')) {
-    Analytics.track('user_logout');
-    Analytics.reset();
-    localStorage.removeItem(CONFIG.STORAGE_KEYS.AUTH_TOKEN);
-    localStorage.removeItem(CONFIG.STORAGE_KEYS.CURRENT_USER);
-    window.location.replace(CONFIG.AUTH_PAGE);
+  Analytics.track('logout');
+  Analytics.reset();
+  
+  if (typeof Security !== 'undefined') {
+    Security.clearSensitiveData();
+  } else {
+    localStorage.removeItem('authToken');
+    localStorage.removeItem('currentUser');
   }
+  
+  window.location.href = CONFIG.AUTH_PAGE;
 }
