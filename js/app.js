@@ -9,7 +9,8 @@ function init() {
   Analytics.init();
   NetworkStatus.init();
   
-  if (!authToken) {
+  if (!authToken || Security.isTokenExpired(authToken)) {
+    Security.clearSensitiveData();
     window.location.replace(CONFIG.AUTH_PAGE);
     return;
   }

@@ -9,6 +9,14 @@ async function sendMessage() {
   
   if (!text || isProcessing) return;
   
+  // Security: Sanitize and check for suspicious input
+  text = Security.sanitize(text);
+  if (Security.detectSuspiciousInput(text)) {
+    addBotMessage("I couldn't process that input. Please try again.");
+    input.value = '';
+    return;
+  }
+  
   input.value = '';
   isProcessing = true;
   

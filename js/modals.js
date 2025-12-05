@@ -22,8 +22,23 @@ async function submitQuickAdd() {
   const skillsText = document.getElementById('qa-skills').value.trim();
   const notesText = document.getElementById('qa-notes').value.trim();
   
+  // Security: Sanitize inputs
+  name = Security.sanitize(name);
+
+
   if (!name) {
     alert('Name is required!');
+    return;
+  }
+   // Validate email if provided
+  if (email && !Security.isValidEmail(email)) {
+    alert('Please enter a valid email address');
+    return;
+  }
+  
+  // Validate phone if provided
+  if (phone && !Security.isValidPhone(phone)) {
+    alert('Please enter a valid phone number');
     return;
   }
   

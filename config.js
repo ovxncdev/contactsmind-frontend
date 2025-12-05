@@ -15,4 +15,6 @@ const CONFIG = {
   // Leave empty or remove to disable analytics
   POSTHOG_KEY: 'phc_hiVyhEOOywZ23vZcMYcJGj8Bq7i8latPnDUQ5NNKUxJ',  // e.g., 'phc_xxxxxxxxxxxx'
   POSTHOG_HOST: 'https://us.i.posthog.com'
+  MAX_INPUT_LENGTH: 5000,
+  SESSION_TIMEOUT: 24 * 60 * 60 * 1000, // 24 hours
 };

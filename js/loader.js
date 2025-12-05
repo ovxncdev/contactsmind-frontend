@@ -4,6 +4,7 @@
   const scripts = [
     'config.js',
     'js/utils.js',
+    'js/security.js',
     'js/analytics.js',
     'js/offline.js',
     'js/network.js',
