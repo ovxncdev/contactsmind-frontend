@@ -18,29 +18,42 @@ function initGoogleSignIn() {
 }
 
 // Trigger Google Sign-In popup
+// Trigger Google Sign-In popup
 function signInWithGoogle() {
-  if (typeof google !== 'undefined' && google.accounts) {
-    google.accounts.id.prompt((notification) => {
-      if (notification.isNotDisplayed()) {
-        // Fallback: use OAuth popup
-        const width = 500;
-        const height = 600;
-        const left = (window.innerWidth - width) / 2;
-        const top = (window.innerHeight - height) / 2;
-        
-        const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
-          `client_id=${GOOGLE_CLIENT_ID}` +
-          `&redirect_uri=${encodeURIComponent(window.location.origin + '/auth.html')}` +
-          `&response_type=token id_token` +
-          `&scope=email profile` +
-          `&nonce=${Math.random().toString(36).substring(2)}`;
-        
-        window.open(authUrl, 'Google Sign In', `width=${width},height=${height},left=${left},top=${top}`);
-      }
-    });
-  } else {
-    showError('Google Sign-In is loading. Please try again.');
+  console.log('Google sign-in clicked');
+  
+  if (typeof google === 'undefined' || !google.accounts) {
+    console.log('Google not loaded, using redirect');
+    // Fallback: direct OAuth redirect
+    const redirectUri = window.location.origin + '/auth.html';
+    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
+      `client_id=${GOOGLE_CLIENT_ID}` +
+      `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+      `&response_type=id_token` +
+      `&scope=email%20profile` +
+      `&nonce=${Math.random().toString(36).substring(2)}`;
+    
+    window.location.href = authUrl;
+    return;
   }
+
+  // Try Google One Tap first
+  google.accounts.id.prompt((notification) => {
+    console.log('Google prompt notification:', notification);
+    if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+      console.log('One Tap not displayed, using redirect');
+      // Fallback to redirect
+      const redirectUri = window.location.origin + '/auth.html';
+      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
+        `client_id=${GOOGLE_CLIENT_ID}` +
+        `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+        `&response_type=id_token` +
+        `&scope=email%20profile` +
+        `&nonce=${Math.random().toString(36).substring(2)}`;
+      
+      window.location.href = authUrl;
+    }
+  });
 }
 
 // Handle Google callback
