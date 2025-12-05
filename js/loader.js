@@ -9,6 +9,7 @@
     'js/network.js',
     'js/contacts.js',
     'js/parser.js',
+    'js/theme.js'
     'js/chat.js',
     'js/notes.js',
     'js/reminders.js',
