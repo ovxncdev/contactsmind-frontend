@@ -8,6 +8,7 @@ function init() {
   Theme.init();
   Analytics.init();
   NetworkStatus.init();
+  Performance.init();
   
   if (!authToken || Security.isTokenExpired(authToken)) {
     Security.clearSensitiveData();
