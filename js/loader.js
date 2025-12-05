@@ -16,6 +16,7 @@
     'js/ui.js',
     'js/modals.js',
     'js/swipe.js',
+    'js/onboarding.js',
     'js/app.js'
   ];
 

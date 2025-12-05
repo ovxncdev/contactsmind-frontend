@@ -16,6 +16,7 @@ function init() {
   
   verifyToken();
   setupEventListeners();
+  Onboarding.show();
 }
 
 async function verifyToken() {
