@@ -7,7 +7,72 @@ let currentView = 'chat';
 let isProcessing = false;
 let pendingConfirmation = null;
 
+// ============== POSTHOG ANALYTICS (Safe - won't break app) ==============
+const Analytics = {
+  ready: false,
+  
+  init() {
+    try {
+      // Only init if key exists and is valid
+      if (CONFIG.POSTHOG_KEY && 
+          CONFIG.POSTHOG_KEY.length > 10 && 
+          CONFIG.POSTHOG_KEY.startsWith('phc_') &&
+          typeof posthog !== 'undefined') {
+        
+        posthog.init(CONFIG.POSTHOG_KEY, {
+          api_host: CONFIG.POSTHOG_HOST || 'https://us.i.posthog.com',
+          loaded: () => {
+            this.ready = true;
+            console.log('Analytics ready');
+          },
+          autocapture: true,
+          capture_pageview: true
+        });
+      }
+    } catch (e) {
+      // Silently fail - analytics should never break the app
+      console.log('Analytics disabled');
+    }
+  },
+  
+  track(event, properties = {}) {
+    try {
+      if (this.ready && typeof posthog !== 'undefined') {
+        posthog.capture(event, properties);
+      }
+    } catch (e) {
+      // Silent fail
+    }
+  },
+  
+  identify(user) {
+    try {
+      if (this.ready && typeof posthog !== 'undefined' && user) {
+        posthog.identify(user._id || user.id, {
+          email: user.email,
+          name: user.name
+        });
+      }
+    } catch (e) {
+      // Silent fail
+    }
+  },
+  
+  reset() {
+    try {
+      if (this.ready && typeof posthog !== 'undefined') {
+        posthog.reset();
+      }
+    } catch (e) {
+      // Silent fail
+    }
+  }
+};
+
+// ============== APP INITIALIZATION ==============
 function init() {
+  Analytics.init();
+  
   if (!authToken) {
     window.location.replace(CONFIG.AUTH_PAGE);
     return;
@@ -24,6 +89,8 @@ async function verifyToken() {
 
     if (response.ok) {
       currentUser = await response.json();
+      Analytics.identify(currentUser);
+      Analytics.track('app_opened', { contacts_count: contacts.length });
       await loadContacts();
       addBotMessage(`Welcome back! You have ${contacts.length} contacts saved.`);
     } else {
@@ -337,6 +404,7 @@ async function sendMessage() {
       existing.updatedAt = new Date().toISOString();
       
       await syncContacts([existing]);
+      Analytics.track('contact_merged', { name: existing.name });
       addBotMessage(`Updated ${existing.name}'s info!`);
       
       pendingConfirmation = null;
@@ -346,6 +414,7 @@ async function sendMessage() {
     } else if (response.includes('no') || response.includes('different')) {
       const newContact = pendingConfirmation.newInfo;
       await syncContacts([newContact]);
+      Analytics.track('contact_added', { name: newContact.name });
       addBotMessage(`Added new contact: ${newContact.name}`);
       
       pendingConfirmation = null;
@@ -382,6 +451,8 @@ async function sendMessage() {
   }
  
   if (isQuery && contacts.length > 0) {
+    Analytics.track('search_query', { query: text });
+    
     if (navigator.onLine) {
       try {
         const searchResult = await fetch(`${CONFIG.API_URL}/api/contacts/search-ai`, {
@@ -437,6 +508,7 @@ async function sendMessage() {
       } else {
         const stats = await syncContacts([newContact]);
         if (stats) {
+          Analytics.track('contact_added', { name: newContact.name });
           let response = 'Got it! ';
           if (stats.created > 0) response += `Added ${newContact.name}.`;
           if (stats.updated > 0) response += `Updated info.`;
@@ -489,6 +561,8 @@ function hideLoading() {
 
 function switchView(view) {
   currentView = view;
+  Analytics.track('view_switched', { view: view });
+  
   const tabs = document.querySelectorAll('.tab:not(.logout-btn)');
   tabs.forEach(tab => tab.classList.remove('active'));
   event.target.classList.add('active');
@@ -591,6 +665,8 @@ function updateContactCount() {
 
 function handleLogout() {
   if (confirm('Are you sure you want to logout?')) {
+    Analytics.track('user_logout');
+    Analytics.reset();
     localStorage.removeItem(CONFIG.STORAGE_KEYS.AUTH_TOKEN);
     localStorage.removeItem(CONFIG.STORAGE_KEYS.CURRENT_USER);
     window.location.replace(CONFIG.AUTH_PAGE);
@@ -606,6 +682,7 @@ function escapeHtml(text) {
 document.addEventListener('DOMContentLoaded', init);
 
 function openQuickAdd() {
+  Analytics.track('quick_add_opened');
   document.getElementById('quick-add-modal').classList.remove('hidden');
 }
 
@@ -653,13 +730,16 @@ async function submitQuickAdd() {
       existing.notes = [...existing.notes, ...notes];
       existing.updatedAt = new Date().toISOString();
       await syncContacts([existing]);
+      Analytics.track('contact_merged', { name: existing.name });
       addBotMessage(`Updated ${existing.name}'s info!`);
     } else {
       await syncContacts([newContact]);
+      Analytics.track('contact_added', { name: newContact.name, method: 'quick_add' });
       addBotMessage(`Added ${name}!`);
     }
   } else {
     await syncContacts([newContact]);
+    Analytics.track('contact_added', { name: newContact.name, method: 'quick_add' });
     addBotMessage(`Added ${name}!`);
   }
   
@@ -676,6 +756,7 @@ async function deleteContact(contactId) {
     });
     
     if (response.ok) {
+      Analytics.track('contact_deleted');
       contacts = contacts.filter(c => (c._id || c.id) !== contactId);
       updateContactCount();
       renderContacts();
@@ -692,6 +773,8 @@ async function deleteContact(contactId) {
 function editContact(contactId) {
   const contact = contacts.find(c => (c._id || c.id) === contactId);
   if (!contact) return;
+  
+  Analytics.track('contact_edit_opened');
   
   document.getElementById('edit-contact-id').value = contact._id || contact.id;
   document.getElementById('edit-name').value = contact.name || '';
@@ -728,6 +811,7 @@ async function submitEdit() {
     });
     
     if (response.ok) {
+      Analytics.track('contact_edited');
       const updated = await response.json();
       const index = contacts.findIndex(c => (c._id || c.id) === contactId);
       if (index !== -1) contacts[index] = updated;
@@ -798,6 +882,7 @@ function handleTouchEnd(e) {
 }
 
 function openFeedback() {
+  Analytics.track('feedback_opened');
   document.getElementById('feedback-modal').classList.remove('hidden');
 }
 
@@ -820,6 +905,8 @@ async function submitFeedback() {
     alert('Please rate your experience or leave a comment!');
     return;
   }
+  
+  Analytics.track('feedback_submitted', { rating, type });
   
   try {
     await fetch(`${CONFIG.API_URL}/api/feedback`, {
