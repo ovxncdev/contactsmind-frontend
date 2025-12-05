@@ -245,7 +245,125 @@ function downloadFile(content, filename, type) {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+// Contact Sharing
 
+function shareContact(contactId) {
+  const contact = contacts.find(c => (c._id || c.id) === contactId);
+  if (!contact) return;
+  
+  const shareText = formatContactForShare(contact);
+  
+  // Check if Web Share API is available (mobile)
+  if (navigator.share) {
+    navigator.share({
+      title: `Contact: ${contact.name}`,
+      text: shareText
+    }).then(() => {
+      Analytics.track('contact_shared', { method: 'native' });
+    }).catch(err => {
+      if (err.name !== 'AbortError') {
+        copyContactToClipboard(contact, shareText);
+      }
+    });
+  } else {
+    copyContactToClipboard(contact, shareText);
+  }
+}
+
+function formatContactForShare(contact) {
+  let text = `📇 ${contact.name.toUpperCase()}\n`;
+  if (contact.phone) text += `📱 ${contact.phone}\n`;
+  if (contact.email) text += `📧 ${contact.email}\n`;
+  if (contact.skills?.length) text += `💼 ${contact.skills.join(', ')}\n`;
+  text += `\nShared from ContactsMind`;
+  return text;
+}
+
+function copyContactToClipboard(contact, text) {
+  navigator.clipboard.writeText(text).then(() => {
+    Analytics.track('contact_shared', { method: 'clipboard' });
+    addBotMessage(`${contact.name}'s info copied to clipboard!`);
+  }).catch(() => {
+    addBotMessage('Failed to copy. Please try again.');
+  });
+}
+
+function generateContactLink(contactId) {
+  const contact = contacts.find(c => (c._id || c.id) === contactId);
+  if (!contact) return;
+  
+  // Create a shareable vCard data URL
+  const vcard = createVCardString(contact);
+  const blob = new Blob([vcard], { type: 'text/vcard' });
+  const url = URL.createObjectURL(blob);
+  
+  // Create temporary link and trigger download
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${contact.name.replace(/\s+/g, '_')}.vcf`;
+  a.click();
+  URL.revokeObjectURL(url);
+  
+  Analytics.track('contact_shared', { method: 'vcard_download' });
+  addBotMessage(`Downloaded ${contact.name}'s contact card!`);
+}
+
+function createVCardString(contact) {
+  const nameParts = (contact.name || '').split(' ');
+  const firstName = nameParts[0] || '';
+  const lastName = nameParts.slice(1).join(' ') || '';
+  
+  let vcard = 'BEGIN:VCARD\nVERSION:3.0\n';
+  vcard += `N:${lastName};${firstName};;;\n`;
+  vcard += `FN:${contact.name || ''}\n`;
+  if (contact.phone) vcard += `TEL:${contact.phone}\n`;
+  if (contact.email) vcard += `EMAIL:${contact.email}\n`;
+  if (contact.skills?.length) vcard += `NOTE:Skills: ${contact.skills.join(', ')}\n`;
+  vcard += 'END:VCARD';
+  return vcard;
+}
+
+// Contact Sharing
+
+function shareContact(contactId) {
+  const contact = contacts.find(c => (c._id || c.id) === contactId);
+  if (!contact) return;
+  
+  const shareText = formatContactForShare(contact);
+  
+  if (navigator.share) {
+    navigator.share({
+      title: `Contact: ${contact.name}`,
+      text: shareText
+    }).then(() => {
+      Analytics.track('contact_shared', { method: 'native' });
+    }).catch(err => {
+      if (err.name !== 'AbortError') {
+        copyContactToClipboard(contact, shareText);
+      }
+    });
+  } else {
+    copyContactToClipboard(contact, shareText);
+  }
+}
+
+function formatContactForShare(contact) {
+  let text = `📇 ${contact.name.toUpperCase()}\n`;
+  if (contact.phone) text += `📱 ${contact.phone}\n`;
+  if (contact.email) text += `📧 ${contact.email}\n`;
+  if (contact.skills?.length) text += `💼 ${contact.skills.join(', ')}\n`;
+  text += `\nShared from ContactsMind`;
+  return text;
+}
+
+function copyContactToClipboard(contact, text) {
+  navigator.clipboard.writeText(text).then(() => {
+    Analytics.track('contact_shared', { method: 'clipboard' });
+    addBotMessage(`${contact.name}'s info copied to clipboard!`);
+  }).catch(() => {
+    addBotMessage('Failed to copy. Please try again.');
+  });
+}
 
 function updateContactCount() {
   document.getElementById('contact-count').textContent = contacts.length;
