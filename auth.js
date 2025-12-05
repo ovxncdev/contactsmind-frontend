@@ -120,17 +120,36 @@ async function handleSignup() {
 }
 
 // Check if already logged in
-function checkAuth() {
+// Check if already logged in
+async function checkAuth() {
   const token = localStorage.getItem(CONFIG.STORAGE_KEYS.AUTH_TOKEN);
   if (token) {
-    window.location.href = CONFIG.APP_PAGE;
+    // Verify token is still valid
+    try {
+      const response = await fetch(`${CONFIG.API_URL}/api/auth/me`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      if (response.ok) {
+        window.location.href = CONFIG.APP_PAGE;
+      } else {
+        // Token invalid, clear it
+        localStorage.removeItem(CONFIG.STORAGE_KEYS.AUTH_TOKEN);
+        localStorage.removeItem(CONFIG.STORAGE_KEYS.CURRENT_USER);
+      }
+    } catch (error) {
+      // Network error, clear token
+      localStorage.removeItem(CONFIG.STORAGE_KEYS.AUTH_TOKEN);
+      localStorage.removeItem(CONFIG.STORAGE_KEYS.CURRENT_USER);
+    }
   }
 }
 
 // Initialize
-document.addEventListener('DOMContentLoaded', () => {
+// Initialize
+document.addEventListener('DOMContentLoaded', async () => {
   // Check if already logged in
-  checkAuth();
+  await checkAuth();
 
   // Enter key support
   document.getElementById('login-password')?.addEventListener('keypress', (e) => {
