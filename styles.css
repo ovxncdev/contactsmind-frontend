@@ -846,6 +846,44 @@ textarea.form-input {
   background: rgba(139, 92, 246, 0.2);
 }
 
+/* Network Status Indicator */
+.network-status {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 500;
+  z-index: 9999;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.network-status.online {
+  background: rgba(34, 197, 94, 0.9);
+  color: white;
+}
+
+.network-status.offline {
+  background: rgba(239, 68, 68, 0.9);
+  color: white;
+}
+
+.network-status.hidden {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%) translateY(-20px);
+}
+
+/* Pending sync badge */
+.pending-badge {
+  font-size: 12px;
+  margin-left: 4px;
+}
+
+
 /* Feedback textarea */
 #feedback-text {
   width: 100%;

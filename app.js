@@ -1,4 +1,4 @@
-// app.js - Main Application Logic
+// app.js - Main Application Logic with Offline Support
 
 let authToken = localStorage.getItem('authToken');
 let currentUser = null;
@@ -7,31 +7,206 @@ let currentView = 'chat';
 let isProcessing = false;
 let pendingConfirmation = null;
 
-// ============== POSTHOG ANALYTICS (Safe - won't break app) ==============
+// ============== OFFLINE QUEUE ==============
+const OfflineQueue = {
+  QUEUE_KEY: 'contactsmind_offline_queue',
+  
+  getQueue() {
+    try {
+      return JSON.parse(localStorage.getItem(this.QUEUE_KEY)) || [];
+    } catch {
+      return [];
+    }
+  },
+  
+  addToQueue(action) {
+    const queue = this.getQueue();
+    queue.push({
+      ...action,
+      id: `queue-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      timestamp: new Date().toISOString()
+    });
+    localStorage.setItem(this.QUEUE_KEY, JSON.stringify(queue));
+    console.log('📥 Added to offline queue:', action.type);
+  },
+  
+  removeFromQueue(id) {
+    const queue = this.getQueue().filter(item => item.id !== id);
+    localStorage.setItem(this.QUEUE_KEY, JSON.stringify(queue));
+  },
+  
+  clearQueue() {
+    localStorage.removeItem(this.QUEUE_KEY);
+  },
+  
+  hasItems() {
+    return this.getQueue().length > 0;
+  }
+};
+
+// ============== OFFLINE CACHE ==============
+const OfflineCache = {
+  CONTACTS_KEY: 'contactsmind_contacts_cache',
+  
+  saveContacts(contacts) {
+    try {
+      localStorage.setItem(this.CONTACTS_KEY, JSON.stringify({
+        contacts,
+        lastUpdated: new Date().toISOString()
+      }));
+      console.log('💾 Contacts cached offline');
+    } catch (e) {
+      console.error('Failed to cache contacts:', e);
+    }
+  },
+  
+  getContacts() {
+    try {
+      const data = JSON.parse(localStorage.getItem(this.CONTACTS_KEY));
+      return data?.contacts || [];
+    } catch {
+      return [];
+    }
+  },
+  
+  getLastUpdated() {
+    try {
+      const data = JSON.parse(localStorage.getItem(this.CONTACTS_KEY));
+      return data?.lastUpdated;
+    } catch {
+      return null;
+    }
+  }
+};
+
+// ============== NETWORK STATUS ==============
+const NetworkStatus = {
+  isOnline: navigator.onLine,
+  
+  init() {
+    window.addEventListener('online', () => this.handleOnline());
+    window.addEventListener('offline', () => this.handleOffline());
+    this.updateUI();
+  },
+  
+  handleOnline() {
+    this.isOnline = true;
+    console.log('🌐 Back online');
+    this.updateUI();
+    addBotMessage("You're back online! Syncing changes...");
+    this.syncOfflineChanges();
+  },
+  
+  handleOffline() {
+    this.isOnline = false;
+    console.log('📴 Gone offline');
+    this.updateUI();
+    addBotMessage("You're offline. Changes will sync when you reconnect.");
+  },
+  
+  updateUI() {
+    let indicator = document.getElementById('network-status');
+    
+    if (!indicator) {
+      indicator = document.createElement('div');
+      indicator.id = 'network-status';
+      document.body.appendChild(indicator);
+    }
+    
+    if (this.isOnline) {
+      indicator.className = 'network-status online';
+      indicator.innerHTML = '🟢 Online';
+      setTimeout(() => indicator.classList.add('hidden'), 3000);
+    } else {
+      indicator.className = 'network-status offline';
+      indicator.innerHTML = '🔴 Offline';
+      indicator.classList.remove('hidden');
+    }
+  },
+  
+  async syncOfflineChanges() {
+    if (!this.isOnline || !OfflineQueue.hasItems()) return;
+    
+    const queue = OfflineQueue.getQueue();
+    console.log(`🔄 Syncing ${queue.length} offline changes...`);
+    
+    for (const item of queue) {
+      try {
+        let success = false;
+        
+        switch (item.type) {
+          case 'add_contact':
+            const addResult = await syncContacts([item.contact]);
+            success = !!addResult;
+            break;
+            
+          case 'update_contact':
+            const updateRes = await fetch(`${CONFIG.API_URL}/api/contacts/${item.contactId}`, {
+              method: 'PUT',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${authToken}`
+              },
+              body: JSON.stringify(item.contact)
+            });
+            success = updateRes.ok;
+            break;
+            
+          case 'delete_contact':
+            const deleteRes = await fetch(`${CONFIG.API_URL}/api/contacts/${item.contactId}`, {
+              method: 'DELETE',
+              headers: { 'Authorization': `Bearer ${authToken}` }
+            });
+            success = deleteRes.ok;
+            break;
+        }
+        
+        if (success) {
+          OfflineQueue.removeFromQueue(item.id);
+          console.log('✅ Synced:', item.type);
+        }
+      } catch (error) {
+        console.error('Sync failed for item:', item, error);
+      }
+    }
+    
+    // Refresh contacts from server
+    await loadContacts();
+    
+    if (!OfflineQueue.hasItems()) {
+      addBotMessage("All offline changes synced successfully! ✅");
+    }
+  }
+};
+
+// ============== POSTHOG ANALYTICS ==============
 const Analytics = {
   ready: false,
   
   init() {
     try {
-      // Only init if key exists and is valid
       if (CONFIG.POSTHOG_KEY && 
           CONFIG.POSTHOG_KEY.length > 10 && 
-          CONFIG.POSTHOG_KEY.startsWith('phc_') &&
-          typeof posthog !== 'undefined') {
+          CONFIG.POSTHOG_KEY.startsWith('phc_')) {
         
-        posthog.init(CONFIG.POSTHOG_KEY, {
-          api_host: CONFIG.POSTHOG_HOST || 'https://us.i.posthog.com',
-          loaded: () => {
-            this.ready = true;
-            console.log('Analytics ready');
-          },
-          autocapture: true,
-          capture_pageview: true
-        });
+        const initPostHog = () => {
+          if (typeof posthog !== 'undefined' && posthog.init) {
+            posthog.init(CONFIG.POSTHOG_KEY, {
+              api_host: CONFIG.POSTHOG_HOST || 'https://us.i.posthog.com',
+              loaded: (ph) => {
+                this.ready = true;
+                console.log('✅ Analytics ready');
+              }
+            });
+          } else {
+            setTimeout(initPostHog, 100);
+          }
+        };
+        
+        initPostHog();
       }
     } catch (e) {
-      // Silently fail - analytics should never break the app
-      console.log('Analytics disabled');
+      console.log('Analytics disabled:', e);
     }
   },
   
@@ -40,9 +215,7 @@ const Analytics = {
       if (this.ready && typeof posthog !== 'undefined') {
         posthog.capture(event, properties);
       }
-    } catch (e) {
-      // Silent fail
-    }
+    } catch (e) {}
   },
   
   identify(user) {
@@ -53,9 +226,7 @@ const Analytics = {
           name: user.name
         });
       }
-    } catch (e) {
-      // Silent fail
-    }
+    } catch (e) {}
   },
   
   reset() {
@@ -63,15 +234,14 @@ const Analytics = {
       if (this.ready && typeof posthog !== 'undefined') {
         posthog.reset();
       }
-    } catch (e) {
-      // Silent fail
-    }
+    } catch (e) {}
   }
 };
 
 // ============== APP INITIALIZATION ==============
 function init() {
   Analytics.init();
+  NetworkStatus.init();
   
   if (!authToken) {
     window.location.replace(CONFIG.AUTH_PAGE);
@@ -82,6 +252,18 @@ function init() {
 }
 
 async function verifyToken() {
+  // If offline, load from cache
+  if (!navigator.onLine) {
+    console.log('📴 Offline - loading from cache');
+    contacts = OfflineCache.getContacts();
+    updateContactCount();
+    renderContacts();
+    const lastUpdated = OfflineCache.getLastUpdated();
+    const timeAgo = lastUpdated ? getTimeAgo(new Date(lastUpdated)) : 'unknown';
+    addBotMessage(`You're offline. Showing ${contacts.length} cached contacts (last synced ${timeAgo}).`);
+    return;
+  }
+  
   try {
     const response = await fetch(`${CONFIG.API_URL}/api/auth/me`, {
       headers: { 'Authorization': `Bearer ${authToken}` }
@@ -92,7 +274,13 @@ async function verifyToken() {
       Analytics.identify(currentUser);
       Analytics.track('app_opened', { contacts_count: contacts.length });
       await loadContacts();
-      addBotMessage(`Welcome back! You have ${contacts.length} contacts saved.`);
+      
+      // Sync any offline changes
+      if (OfflineQueue.hasItems()) {
+        NetworkStatus.syncOfflineChanges();
+      } else {
+        addBotMessage(`Welcome back! You have ${contacts.length} contacts saved.`);
+      }
     } else {
       localStorage.removeItem(CONFIG.STORAGE_KEYS.AUTH_TOKEN);
       localStorage.removeItem(CONFIG.STORAGE_KEYS.CURRENT_USER);
@@ -100,10 +288,29 @@ async function verifyToken() {
     }
   } catch (error) {
     console.error('verifyToken error:', error);
-    localStorage.removeItem(CONFIG.STORAGE_KEYS.AUTH_TOKEN);
-    localStorage.removeItem(CONFIG.STORAGE_KEYS.CURRENT_USER);
-    window.location.replace(CONFIG.AUTH_PAGE);
+    // Network error - try to load from cache
+    contacts = OfflineCache.getContacts();
+    if (contacts.length > 0) {
+      updateContactCount();
+      renderContacts();
+      addBotMessage(`Connection failed. Showing ${contacts.length} cached contacts.`);
+    } else {
+      localStorage.removeItem(CONFIG.STORAGE_KEYS.AUTH_TOKEN);
+      localStorage.removeItem(CONFIG.STORAGE_KEYS.CURRENT_USER);
+      window.location.replace(CONFIG.AUTH_PAGE);
+    }
   }
+}
+
+function getTimeAgo(date) {
+  const seconds = Math.floor((new Date() - date) / 1000);
+  if (seconds < 60) return 'just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
 }
 
 function setupEventListeners() {
@@ -120,15 +327,45 @@ async function loadContacts() {
     });
     if (response.ok) {
       contacts = await response.json();
+      OfflineCache.saveContacts(contacts); // Cache for offline
       updateContactCount();
       renderContacts();
     }
   } catch (error) {
     console.error('Load contacts error:', error);
+    // Load from cache on error
+    contacts = OfflineCache.getContacts();
+    updateContactCount();
+    renderContacts();
   }
 }
 
 async function syncContacts(newContacts) {
+  // If offline, save locally and queue for later
+  if (!navigator.onLine) {
+    newContacts.forEach(contact => {
+      // Add to local contacts
+      const existingIndex = contacts.findIndex(c => c.name === contact.name);
+      if (existingIndex >= 0) {
+        contacts[existingIndex] = { ...contacts[existingIndex], ...contact };
+      } else {
+        contacts.push(contact);
+      }
+      
+      // Queue for sync
+      OfflineQueue.addToQueue({
+        type: 'add_contact',
+        contact: contact
+      });
+    });
+    
+    OfflineCache.saveContacts(contacts);
+    updateContactCount();
+    renderContacts();
+    
+    return { created: newContacts.length, updated: 0 };
+  }
+  
   try {
     const response = await fetch(`${CONFIG.API_URL}/api/contacts/sync`, {
       method: 'POST',
@@ -141,12 +378,20 @@ async function syncContacts(newContacts) {
     if (response.ok) {
       const data = await response.json();
       contacts = data.contacts;
+      OfflineCache.saveContacts(contacts); // Update cache
       updateContactCount();
       renderContacts();
       return data.stats;
     }
   } catch (error) {
     console.error('Sync error:', error);
+    // Queue for later if network fails
+    newContacts.forEach(contact => {
+      OfflineQueue.addToQueue({
+        type: 'add_contact',
+        contact: contact
+      });
+    });
     return null;
   }
 }
@@ -429,30 +674,39 @@ async function sendMessage() {
     }
   }
   
+  // Detect intent - works offline with fallback
   let isQuery = false;
-  if (navigator.onLine && contacts.length > 0) {
-    try {
-      const intentResponse = await fetch(`${CONFIG.API_URL}/api/detect-intent`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`
-        },
-        body: JSON.stringify({ text })
-      });
-      if (intentResponse.ok) {
-        const intentData = await intentResponse.json();
-        isQuery = intentData.intent === 'query';
+  if (contacts.length > 0) {
+    if (navigator.onLine) {
+      try {
+        const intentResponse = await fetch(`${CONFIG.API_URL}/api/detect-intent`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+          },
+          body: JSON.stringify({ text })
+        });
+        if (intentResponse.ok) {
+          const intentData = await intentResponse.json();
+          isQuery = intentData.intent === 'query';
+        }
+      } catch (err) {
+        // Fallback to local detection
+        const queryWords = ['who', 'find', 'search', 'show', 'list', 'how much', 'owe', '?'];
+        isQuery = queryWords.some(word => text.toLowerCase().includes(word));
       }
-    } catch (err) {
+    } else {
+      // Offline: use local detection
       const queryWords = ['who', 'find', 'search', 'show', 'list', 'how much', 'owe', '?'];
       isQuery = queryWords.some(word => text.toLowerCase().includes(word));
     }
   }
  
   if (isQuery && contacts.length > 0) {
-    Analytics.track('search_query', { query: text });
+    Analytics.track('search_query', { query: text, offline: !navigator.onLine });
     
+    // Try AI search if online
     if (navigator.onLine) {
       try {
         const searchResult = await fetch(`${CONFIG.API_URL}/api/contacts/search-ai`, {
@@ -471,10 +725,11 @@ async function sendMessage() {
           return;
         }
       } catch (err) {
-        console.log('AI search failed');
+        console.log('AI search failed, using local');
       }
     }
     
+    // Fallback to local search (works offline)
     const results = searchContacts(text);
     if (results.length > 0) {
       let response = `Found ${results.length} match${results.length > 1 ? 'es' : ''}:\n\n`;
@@ -490,6 +745,7 @@ async function sendMessage() {
       addBotMessage("No matches found. Try a different search!");
     }
   } else {
+    // Parse contact - works offline with local parser
     const parsed = await parseContactHybrid(text);
     
     if (parsed.contacts.length > 0) {
@@ -508,10 +764,11 @@ async function sendMessage() {
       } else {
         const stats = await syncContacts([newContact]);
         if (stats) {
-          Analytics.track('contact_added', { name: newContact.name });
+          Analytics.track('contact_added', { name: newContact.name, offline: !navigator.onLine });
           let response = 'Got it! ';
           if (stats.created > 0) response += `Added ${newContact.name}.`;
           if (stats.updated > 0) response += `Updated info.`;
+          if (!navigator.onLine) response += ' (will sync when online)';
           addBotMessage(response);
         } else {
           addBotMessage("Saved locally. Will sync when connection is available.");
@@ -594,9 +851,14 @@ function renderContacts() {
     card.className = 'contact-card';
     card.dataset.index = index;
     
+    // Check if this contact has pending offline changes
+    const isPending = OfflineQueue.getQueue().some(q => 
+      q.contact?.name === contact.name || q.contactId === (contact._id || contact.id)
+    );
+    
     let html = `
       <div class="contact-card-header">
-        <h3 class="contact-name">${escapeHtml(contact.name)}</h3>
+        <h3 class="contact-name">${escapeHtml(contact.name)}${isPending ? ' <span class="pending-badge">⏳</span>' : ''}</h3>
         <div class="contact-actions">
           <button class="icon-btn-sm edit-btn" data-index="${index}" title="Edit">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -749,6 +1011,21 @@ async function submitQuickAdd() {
 async function deleteContact(contactId) {
   if (!confirm('Delete this contact?')) return;
   
+  // If offline, delete locally and queue
+  if (!navigator.onLine) {
+    contacts = contacts.filter(c => (c._id || c.id) !== contactId);
+    OfflineCache.saveContacts(contacts);
+    OfflineQueue.addToQueue({
+      type: 'delete_contact',
+      contactId: contactId
+    });
+    updateContactCount();
+    renderContacts();
+    Analytics.track('contact_deleted', { offline: true });
+    addBotMessage('Contact deleted! (will sync when online)');
+    return;
+  }
+  
   try {
     const response = await fetch(`${CONFIG.API_URL}/api/contacts/${contactId}`, {
       method: 'DELETE',
@@ -758,6 +1035,7 @@ async function deleteContact(contactId) {
     if (response.ok) {
       Analytics.track('contact_deleted');
       contacts = contacts.filter(c => (c._id || c.id) !== contactId);
+      OfflineCache.saveContacts(contacts);
       updateContactCount();
       renderContacts();
       addBotMessage('Contact deleted!');
@@ -766,7 +1044,16 @@ async function deleteContact(contactId) {
     }
   } catch (error) {
     console.error('Delete error:', error);
-    addBotMessage('Error deleting contact.');
+    // Queue for later
+    OfflineQueue.addToQueue({
+      type: 'delete_contact',
+      contactId: contactId
+    });
+    contacts = contacts.filter(c => (c._id || c.id) !== contactId);
+    OfflineCache.saveContacts(contacts);
+    updateContactCount();
+    renderContacts();
+    addBotMessage('Contact deleted locally. Will sync when online.');
   }
 }
 
@@ -800,6 +1087,23 @@ async function submitEdit() {
   contact.skills = document.getElementById('edit-skills').value.split(',').map(s => s.trim()).filter(s => s);
   contact.updatedAt = new Date().toISOString();
   
+  // If offline, save locally and queue
+  if (!navigator.onLine) {
+    const index = contacts.findIndex(c => (c._id || c.id) === contactId);
+    if (index !== -1) contacts[index] = contact;
+    OfflineCache.saveContacts(contacts);
+    OfflineQueue.addToQueue({
+      type: 'update_contact',
+      contactId: contactId,
+      contact: contact
+    });
+    renderContacts();
+    closeEditModal();
+    Analytics.track('contact_edited', { offline: true });
+    addBotMessage(`Updated ${contact.name}! (will sync when online)`);
+    return;
+  }
+  
   try {
     const response = await fetch(`${CONFIG.API_URL}/api/contacts/${contactId}`, {
       method: 'PUT',
@@ -815,10 +1119,17 @@ async function submitEdit() {
       const updated = await response.json();
       const index = contacts.findIndex(c => (c._id || c.id) === contactId);
       if (index !== -1) contacts[index] = updated;
+      OfflineCache.saveContacts(contacts);
       renderContacts();
     }
   } catch (error) {
     console.error('Update error:', error);
+    // Queue for later
+    OfflineQueue.addToQueue({
+      type: 'update_contact',
+      contactId: contactId,
+      contact: contact
+    });
   }
   
   closeEditModal();
@@ -908,17 +1219,19 @@ async function submitFeedback() {
   
   Analytics.track('feedback_submitted', { rating, type });
   
-  try {
-    await fetch(`${CONFIG.API_URL}/api/feedback`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${authToken}`
-      },
-      body: JSON.stringify({ rating, text, type, timestamp: new Date().toISOString() })
-    });
-  } catch (err) {
-    console.log('Feedback error:', err);
+  if (navigator.onLine) {
+    try {
+      await fetch(`${CONFIG.API_URL}/api/feedback`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`
+        },
+        body: JSON.stringify({ rating, text, type, timestamp: new Date().toISOString() })
+      });
+    } catch (err) {
+      console.log('Feedback error:', err);
+    }
   }
   
   closeFeedback();
