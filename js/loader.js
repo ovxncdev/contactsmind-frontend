@@ -10,6 +10,7 @@
     'js/network.js',
     'js/theme.js',
     'js/performance.js',
+    'js/calendar.js',
     'js/contacts.js',
     'js/parser.js',
     'js/chat.js',

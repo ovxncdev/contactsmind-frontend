@@ -10,6 +10,7 @@ function init() {
   NetworkStatus.init();
   Performance.init();
   
+  
   if (!authToken || Security.isTokenExpired(authToken)) {
     Security.clearSensitiveData();
     window.location.replace(CONFIG.AUTH_PAGE);
@@ -46,6 +47,7 @@ async function verifyToken() {
       Analytics.identify(currentUser);
       Analytics.track('app_opened');
       await loadContacts();
+      await Calendar.init();
       
       if (OfflineQueue.hasItems()) {
         NetworkStatus.syncOfflineChanges();

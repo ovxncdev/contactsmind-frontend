@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Connecting Calendar...</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="auth-container">
+    <div class="auth-card" style="text-align: center;">
+      <div class="auth-logo">
+        <div class="logo-icon">CM</div>
+        <span class="logo-text">ContactsMind</span>
+      </div>
+      <div id="status">
+        <div class="loading" style="justify-content: center;">
+          <div class="loading-dot"></div>
+          <div class="loading-dot"></div>
+          <div class="loading-dot"></div>
+        </div>
+        <p style="margin-top: 20px; color: var(--text-secondary);">Connecting Google Calendar...</p>
+      </div>
+    </div>
+  </div>
+  
+  <script src="config.js"></script>
+  <script>
+    async function handleCallback() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const code = urlParams.get('code');
+      const error = urlParams.get('error');
+      
+      const statusEl = document.getElementById('status');
+      
+      if (error) {
+        statusEl.innerHTML = `
+          <p style="color: var(--error);">❌ Connection cancelled</p>
+          <p style="color: var(--text-secondary); margin-top: 10px;">Redirecting...</p>
+        `;
+        setTimeout(() => window.location.href = '/app.html', 2000);
+        return;
+      }
+      
+      if (!code) {
+        statusEl.innerHTML = `
+          <p style="color: var(--error);">❌ No authorization code received</p>
+          <p style="color: var(--text-secondary); margin-top: 10px;">Redirecting...</p>
+        `;
+        setTimeout(() => window.location.href = '/app.html', 2000);
+        return;
+      }
+      
+      try {
+        const authToken = localStorage.getItem('authToken');
+        
+        const response = await fetch(`${CONFIG.API_URL}/api/calendar/callback`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+          },
+          body: JSON.stringify({ code })
+        });
+        
+        if (response.ok) {
+          statusEl.innerHTML = `
+            <p style="color: var(--success); font-size: 24px;">✓</p>
+            <p style="color: var(--success); margin-top: 10px;">Calendar connected!</p>
+            <p style="color: var(--text-secondary); margin-top: 10px;">Redirecting...</p>
+          `;
+          localStorage.setItem('calendarConnected', 'true');
+        } else {
+          throw new Error('Failed to connect');
+        }
+      } catch (error) {
+        statusEl.innerHTML = `
+          <p style="color: var(--error);">❌ Failed to connect calendar</p>
+          <p style="color: var(--text-secondary); margin-top: 10px;">Redirecting...</p>
+        `;
+      }
+      
+      setTimeout(() => window.location.href = '/app.html', 2000);
+    }
+    
+    handleCallback();
+  </script>
+</body>
+</html>
