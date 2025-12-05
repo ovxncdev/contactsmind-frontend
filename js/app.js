@@ -5,6 +5,7 @@ let currentUser = null;
 
 function init() {
   console.log('🚀 Init started');
+  Theme.init();
   Analytics.init();
   NetworkStatus.init();
   
