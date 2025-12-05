@@ -1058,7 +1058,7 @@ select.form-input {
    ======================================== */
 .network-status {
   position: fixed;
-  top: 16px;
+  top: 60px; /* Moved down to avoid dynamic island */
   right: 16px;
   padding: 8px 14px;
   border-radius: var(--radius-full);
@@ -1102,6 +1102,13 @@ select.form-input {
 @keyframes syncSpin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+}
+
+/* Safe area for dynamic island */
+@supports (padding-top: env(safe-area-inset-top)) {
+  .network-status {
+    top: calc(60px + env(safe-area-inset-top));
+  }
 }
 /* ========================================
    EMPTY STATE
