@@ -39,22 +39,28 @@ async function verifyToken() {
       currentUser = await response.json();
       await loadContacts();
       addBotMessage(`Welcome back! You have ${contacts.length} contacts saved.`);
+      
       // Identify user in PostHog
-    if (window.posthog) {
-    posthog.identify(currentUser.email, {
-        name: currentUser.name,
-        plan: currentUser.plan
-    });
-    }
-    trackEvent('app_opened', { contactCount: contacts.length });
+      if (window.posthog) {
+        posthog.identify(currentUser.email, {
+          name: currentUser.name,
+          plan: currentUser.plan
+        });
+      }
+      trackEvent('app_opened', { contactCount: contacts.length });
     } else {
-      // Token invalid, redirect to login
+      // Token invalid - clear and redirect ONCE
+      console.log('Token invalid, clearing...');
       localStorage.removeItem(CONFIG.STORAGE_KEYS.AUTH_TOKEN);
-      window.location.href = CONFIG.AUTH_PAGE;
+      localStorage.removeItem(CONFIG.STORAGE_KEYS.CURRENT_USER);
+      // Use replace to prevent back button loop
+      window.location.replace(CONFIG.AUTH_PAGE);
     }
   } catch (error) {
     console.error('Token verification failed:', error);
-    window.location.href = CONFIG.AUTH_PAGE;
+    localStorage.removeItem(CONFIG.STORAGE_KEYS.AUTH_TOKEN);
+    localStorage.removeItem(CONFIG.STORAGE_KEYS.CURRENT_USER);
+    window.location.replace(CONFIG.AUTH_PAGE);
   }
 }
 

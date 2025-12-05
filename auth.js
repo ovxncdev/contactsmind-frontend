@@ -124,21 +124,18 @@ async function handleSignup() {
 async function checkAuth() {
   const token = localStorage.getItem(CONFIG.STORAGE_KEYS.AUTH_TOKEN);
   if (token) {
-    // Verify token is still valid
     try {
       const response = await fetch(`${CONFIG.API_URL}/api/auth/me`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       
       if (response.ok) {
-        window.location.href = CONFIG.APP_PAGE;
+        window.location.replace(CONFIG.APP_PAGE);
       } else {
-        // Token invalid, clear it
         localStorage.removeItem(CONFIG.STORAGE_KEYS.AUTH_TOKEN);
         localStorage.removeItem(CONFIG.STORAGE_KEYS.CURRENT_USER);
       }
     } catch (error) {
-      // Network error, clear token
       localStorage.removeItem(CONFIG.STORAGE_KEYS.AUTH_TOKEN);
       localStorage.removeItem(CONFIG.STORAGE_KEYS.CURRENT_USER);
     }
