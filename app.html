@@ -86,12 +86,30 @@
     </main>
 
     <div class="contacts-view hidden" id="contacts-view">
-      <div class="contacts-header">
-        <h1 class="contacts-title">Contacts</h1>
-        <span class="contacts-count" id="contacts-count-text">0 contacts</span>
-      </div>
-      <div class="contacts-grid" id="contacts-grid"></div>
+  <div class="contacts-header">
+    <div>
+      <h1 class="contacts-title">Contacts</h1>
+      <span class="contacts-count" id="contacts-count-text">0 contacts</span>
     </div>
+    <div class="contacts-header-actions">
+      <button class="icon-btn" onclick="openExportModal()" title="Export">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="7 10 12 15 17 10"></polyline>
+          <line x1="12" y1="15" x2="12" y2="3"></line>
+        </svg>
+      </button>
+      <button class="icon-btn" onclick="openImportModal()" title="Import">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="17 8 12 3 7 8"></polyline>
+          <line x1="12" y1="3" x2="12" y2="15"></line>
+        </svg>
+      </button>
+    </div>
+  </div>
+  <div class="contacts-grid" id="contacts-grid"></div>
+</div>
   </div>
 
   <!-- Quick Add Modal -->
@@ -268,8 +286,76 @@
       <button class="btn btn-primary btn-block" onclick="submitFeedback()">Send Feedback</button>
     </div>
   </div>
+<!-- Export Modal -->
+<div class="modal-overlay hidden" id="export-modal" onclick="closeExportModal()">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h2 class="modal-title">Export Contacts</h2>
+      <button class="modal-close" onclick="closeExportModal()">×</button>
+    </div>
+    <p style="color: var(--text-secondary); margin-bottom: 20px; font-size: 13px;">
+      Choose a format to export your contacts
+    </p>
+    <div class="export-options">
+      <button class="export-option" onclick="exportContactsCSV(); closeExportModal();">
+        <div class="export-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+          </svg>
+        </div>
+        <div class="export-info">
+          <strong>CSV File</strong>
+          <span>Works with Excel, Google Sheets</span>
+        </div>
+      </button>
+      <button class="export-option" onclick="exportContactsVCard(); closeExportModal();">
+        <div class="export-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+            <circle cx="9" cy="7" r="4"></circle>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+          </svg>
+        </div>
+        <div class="export-info">
+          <strong>vCard File</strong>
+          <span>Works with iPhone, Android, Outlook</span>
+        </div>
+      </button>
+    </div>
+  </div>
+</div>
 
+<!-- Import Modal -->
+<div class="modal-overlay hidden" id="import-modal" onclick="closeImportModal()">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h2 class="modal-title">Import Contacts</h2>
+      <button class="modal-close" onclick="closeImportModal()">×</button>
+    </div>
+    <p style="color: var(--text-secondary); margin-bottom: 20px; font-size: 13px;">
+      Upload a CSV or vCard file to import contacts
+    </p>
+    <div class="import-dropzone" id="import-dropzone" onclick="document.getElementById('import-file').click()">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+        <polyline points="17 8 12 3 7 8"></polyline>
+        <line x1="12" y1="3" x2="12" y2="15"></line>
+      </svg>
+      <span>Click to upload or drag & drop</span>
+      <span class="import-formats">CSV or vCard (.vcf)</span>
+    </div>
+    <input type="file" id="import-file" accept=".csv,.vcf,.vcard" style="display: none;" onchange="handleImportFile(event)">
+    <div id="import-preview" class="import-preview hidden"></div>
+    <button class="btn btn-primary btn-block hidden" id="import-confirm-btn" onclick="confirmImport()">
+      Import Contacts
+    </button>
+  </div>
+</div>
   <script src="config.js"></script>
-  <script src="app.js"></script>
+  <script src="js/loader.js"></script>
 </body>
 </html>
