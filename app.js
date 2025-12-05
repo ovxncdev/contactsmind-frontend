@@ -1,4 +1,4 @@
-// app.js - Main Application Logic with Offline Support
+// app.js - Main Application Logic with Offline Support, Notes & Reminders
 
 let authToken = localStorage.getItem('authToken');
 let currentUser = null;
@@ -54,7 +54,6 @@ const OfflineCache = {
         contacts,
         lastUpdated: new Date().toISOString()
       }));
-      console.log('💾 Contacts cached offline');
     } catch (e) {
       console.error('Failed to cache contacts:', e);
     }
@@ -93,7 +92,7 @@ const NetworkStatus = {
     this.isOnline = true;
     console.log('🌐 Back online');
     this.updateUI();
-    addBotMessage("You're back online! Syncing changes...");
+    addBotMessage("You're back online! Syncing...");
     this.syncOfflineChanges();
   },
   
@@ -115,18 +114,52 @@ const NetworkStatus = {
     
     if (this.isOnline) {
       indicator.className = 'network-status online';
-      indicator.innerHTML = '🟢 Online';
+      indicator.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"></path>
+          <path d="m9 12 2 2 4-4"></path>
+        </svg>
+        Synced
+      `;
       setTimeout(() => indicator.classList.add('hidden'), 3000);
     } else {
       indicator.className = 'network-status offline';
-      indicator.innerHTML = '🔴 Offline';
+      indicator.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M2 2l20 20"></path>
+          <path d="M17.5 19H9a7 7 0 0 1-5.2-11.8"></path>
+          <path d="M22 14.5a4.5 4.5 0 0 0-7.5-3.4"></path>
+          <path d="M8 5a7 7 0 0 1 8.7 4"></path>
+        </svg>
+        Offline
+      `;
       indicator.classList.remove('hidden');
     }
+  },
+  
+  showSyncing() {
+    let indicator = document.getElementById('network-status');
+    if (!indicator) {
+      indicator = document.createElement('div');
+      indicator.id = 'network-status';
+      document.body.appendChild(indicator);
+    }
+    
+    indicator.className = 'network-status online syncing';
+    indicator.innerHTML = `
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"></path>
+        <path d="M21 3v5h-5"></path>
+      </svg>
+      Syncing...
+    `;
+    indicator.classList.remove('hidden');
   },
   
   async syncOfflineChanges() {
     if (!this.isOnline || !OfflineQueue.hasItems()) return;
     
+    this.showSyncing();
     const queue = OfflineQueue.getQueue();
     console.log(`🔄 Syncing ${queue.length} offline changes...`);
     
@@ -163,18 +196,17 @@ const NetworkStatus = {
         
         if (success) {
           OfflineQueue.removeFromQueue(item.id);
-          console.log('✅ Synced:', item.type);
         }
       } catch (error) {
         console.error('Sync failed for item:', item, error);
       }
     }
     
-    // Refresh contacts from server
     await loadContacts();
+    this.updateUI();
     
     if (!OfflineQueue.hasItems()) {
-      addBotMessage("All offline changes synced successfully! ✅");
+      addBotMessage("All changes synced! ✓");
     }
   }
 };
@@ -193,7 +225,7 @@ const Analytics = {
           if (typeof posthog !== 'undefined' && posthog.init) {
             posthog.init(CONFIG.POSTHOG_KEY, {
               api_host: CONFIG.POSTHOG_HOST || 'https://us.i.posthog.com',
-              loaded: (ph) => {
+              loaded: () => {
                 this.ready = true;
                 console.log('✅ Analytics ready');
               }
@@ -202,7 +234,6 @@ const Analytics = {
             setTimeout(initPostHog, 100);
           }
         };
-        
         initPostHog();
       }
     } catch (e) {
@@ -252,9 +283,7 @@ function init() {
 }
 
 async function verifyToken() {
-  // If offline, load from cache
   if (!navigator.onLine) {
-    console.log('📴 Offline - loading from cache');
     contacts = OfflineCache.getContacts();
     updateContactCount();
     renderContacts();
@@ -272,14 +301,13 @@ async function verifyToken() {
     if (response.ok) {
       currentUser = await response.json();
       Analytics.identify(currentUser);
-      Analytics.track('app_opened', { contacts_count: contacts.length });
+      Analytics.track('app_opened');
       await loadContacts();
       
-      // Sync any offline changes
       if (OfflineQueue.hasItems()) {
         NetworkStatus.syncOfflineChanges();
       } else {
-        addBotMessage(`Welcome back! You have ${contacts.length} contacts saved.`);
+        addBotMessage(`Welcome back! You have ${contacts.length} contacts.`);
       }
     } else {
       localStorage.removeItem(CONFIG.STORAGE_KEYS.AUTH_TOKEN);
@@ -288,7 +316,6 @@ async function verifyToken() {
     }
   } catch (error) {
     console.error('verifyToken error:', error);
-    // Network error - try to load from cache
     contacts = OfflineCache.getContacts();
     if (contacts.length > 0) {
       updateContactCount();
@@ -318,6 +345,14 @@ function setupEventListeners() {
   document.getElementById('message-input')?.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') sendMessage();
   });
+  
+  // Rating buttons
+  document.querySelectorAll('.rating-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.rating-btn').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+    });
+  });
 }
 
 async function loadContacts() {
@@ -327,13 +362,12 @@ async function loadContacts() {
     });
     if (response.ok) {
       contacts = await response.json();
-      OfflineCache.saveContacts(contacts); // Cache for offline
+      OfflineCache.saveContacts(contacts);
       updateContactCount();
       renderContacts();
     }
   } catch (error) {
     console.error('Load contacts error:', error);
-    // Load from cache on error
     contacts = OfflineCache.getContacts();
     updateContactCount();
     renderContacts();
@@ -341,28 +375,20 @@ async function loadContacts() {
 }
 
 async function syncContacts(newContacts) {
-  // If offline, save locally and queue for later
   if (!navigator.onLine) {
     newContacts.forEach(contact => {
-      // Add to local contacts
       const existingIndex = contacts.findIndex(c => c.name === contact.name);
       if (existingIndex >= 0) {
         contacts[existingIndex] = { ...contacts[existingIndex], ...contact };
       } else {
         contacts.push(contact);
       }
-      
-      // Queue for sync
-      OfflineQueue.addToQueue({
-        type: 'add_contact',
-        contact: contact
-      });
+      OfflineQueue.addToQueue({ type: 'add_contact', contact });
     });
     
     OfflineCache.saveContacts(contacts);
     updateContactCount();
     renderContacts();
-    
     return { created: newContacts.length, updated: 0 };
   }
   
@@ -378,24 +404,283 @@ async function syncContacts(newContacts) {
     if (response.ok) {
       const data = await response.json();
       contacts = data.contacts;
-      OfflineCache.saveContacts(contacts); // Update cache
+      OfflineCache.saveContacts(contacts);
       updateContactCount();
       renderContacts();
       return data.stats;
     }
   } catch (error) {
     console.error('Sync error:', error);
-    // Queue for later if network fails
     newContacts.forEach(contact => {
-      OfflineQueue.addToQueue({
-        type: 'add_contact',
-        contact: contact
-      });
+      OfflineQueue.addToQueue({ type: 'add_contact', contact });
     });
     return null;
   }
 }
 
+// ============== NOTES FUNCTIONS ==============
+function openNotesModal(contactId) {
+  const contact = contacts.find(c => (c._id || c.id) === contactId);
+  if (!contact) return;
+  
+  Analytics.track('notes_opened', { contact: contact.name });
+  
+  document.getElementById('notes-contact-id').value = contactId;
+  document.getElementById('notes-contact-name').textContent = contact.name;
+  document.getElementById('new-note-text').value = '';
+  
+  renderNotesList(contact);
+  document.getElementById('notes-modal').classList.remove('hidden');
+}
+
+function closeNotesModal() {
+  document.getElementById('notes-modal').classList.add('hidden');
+}
+
+function renderNotesList(contact) {
+  const list = document.getElementById('notes-list');
+  const notes = contact.notes || [];
+  
+  if (notes.length === 0) {
+    list.innerHTML = '<div class="notes-empty">No notes yet</div>';
+    return;
+  }
+  
+  list.innerHTML = notes.map((note, index) => {
+    const noteText = typeof note === 'string' ? note : note.text;
+    const noteDate = note.date ? new Date(note.date).toLocaleDateString() : '';
+    
+    return `
+      <div class="note-item" data-index="${index}">
+        <div class="note-text">${escapeHtml(noteText)}</div>
+        ${noteDate ? `<div class="note-date">${noteDate}</div>` : ''}
+        <button class="note-delete" onclick="deleteNote(${index})" title="Delete">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+    `;
+  }).join('');
+}
+
+async function addNote() {
+  const contactId = document.getElementById('notes-contact-id').value;
+  const noteText = document.getElementById('new-note-text').value.trim();
+  
+  if (!noteText) {
+    alert('Please enter a note');
+    return;
+  }
+  
+  const contact = contacts.find(c => (c._id || c.id) === contactId);
+  if (!contact) return;
+  
+  if (!contact.notes) contact.notes = [];
+  contact.notes.push({
+    text: noteText,
+    date: new Date().toISOString()
+  });
+  contact.updatedAt = new Date().toISOString();
+  
+  await saveContact(contact);
+  
+  document.getElementById('new-note-text').value = '';
+  renderNotesList(contact);
+  renderContacts();
+  
+  Analytics.track('note_added', { contact: contact.name });
+}
+
+async function deleteNote(index) {
+  const contactId = document.getElementById('notes-contact-id').value;
+  const contact = contacts.find(c => (c._id || c.id) === contactId);
+  if (!contact || !contact.notes) return;
+  
+  contact.notes.splice(index, 1);
+  contact.updatedAt = new Date().toISOString();
+  
+  await saveContact(contact);
+  renderNotesList(contact);
+  renderContacts();
+  
+  Analytics.track('note_deleted');
+}
+
+// ============== REMINDERS FUNCTIONS ==============
+function openRemindersModal(contactId) {
+  const contact = contacts.find(c => (c._id || c.id) === contactId);
+  if (!contact) return;
+  
+  Analytics.track('reminders_opened', { contact: contact.name });
+  
+  document.getElementById('reminders-contact-id').value = contactId;
+  document.getElementById('reminders-contact-name').textContent = contact.name;
+  
+  // Set default date to tomorrow
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  document.getElementById('reminder-date').value = tomorrow.toISOString().split('T')[0];
+  document.getElementById('reminder-title').value = '';
+  document.getElementById('reminder-notes').value = '';
+  
+  renderRemindersList(contact);
+  document.getElementById('reminders-modal').classList.remove('hidden');
+}
+
+function closeRemindersModal() {
+  document.getElementById('reminders-modal').classList.add('hidden');
+}
+
+function renderRemindersList(contact) {
+  const list = document.getElementById('reminders-list');
+  const reminders = contact.reminders || [];
+  
+  if (reminders.length === 0) {
+    list.innerHTML = '<div class="reminders-empty">No reminders yet</div>';
+    return;
+  }
+  
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  
+  list.innerHTML = reminders.map((reminder, index) => {
+    const reminderDate = new Date(reminder.date);
+    const reminderDay = new Date(reminderDate.getFullYear(), reminderDate.getMonth(), reminderDate.getDate());
+    
+    let statusClass = '';
+    if (reminderDay < today) statusClass = 'overdue';
+    else if (reminderDay.getTime() === today.getTime()) statusClass = 'today';
+    
+    const dateStr = reminderDate.toLocaleDateString('en-US', { 
+      weekday: 'short', 
+      month: 'short', 
+      day: 'numeric' 
+    });
+    const timeStr = reminder.time || '';
+    
+    return `
+      <div class="reminder-item ${statusClass}" data-index="${index}">
+        <div class="reminder-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polyline points="12 6 12 12 16 14"></polyline>
+          </svg>
+        </div>
+        <div class="reminder-content">
+          <div class="reminder-title">${escapeHtml(reminder.title)}</div>
+          <div class="reminder-datetime">${dateStr}${timeStr ? ' at ' + timeStr : ''}</div>
+          ${reminder.notes ? `<div class="reminder-notes">${escapeHtml(reminder.notes)}</div>` : ''}
+        </div>
+        <button class="reminder-delete" onclick="deleteReminder(${index})" title="Delete">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+    `;
+  }).join('');
+}
+
+async function addReminder() {
+  const contactId = document.getElementById('reminders-contact-id').value;
+  const title = document.getElementById('reminder-title').value.trim();
+  const date = document.getElementById('reminder-date').value;
+  const time = document.getElementById('reminder-time').value;
+  const notes = document.getElementById('reminder-notes').value.trim();
+  
+  if (!title || !date) {
+    alert('Please enter a title and date');
+    return;
+  }
+  
+  const contact = contacts.find(c => (c._id || c.id) === contactId);
+  if (!contact) return;
+  
+  if (!contact.reminders) contact.reminders = [];
+  contact.reminders.push({
+    title,
+    date,
+    time,
+    notes,
+    createdAt: new Date().toISOString()
+  });
+  contact.updatedAt = new Date().toISOString();
+  
+  // Sort reminders by date
+  contact.reminders.sort((a, b) => new Date(a.date) - new Date(b.date));
+  
+  await saveContact(contact);
+  
+  document.getElementById('reminder-title').value = '';
+  document.getElementById('reminder-notes').value = '';
+  renderRemindersList(contact);
+  renderContacts();
+  
+  Analytics.track('reminder_added', { contact: contact.name });
+  addBotMessage(`Reminder added for ${contact.name}: "${title}" on ${new Date(date).toLocaleDateString()}`);
+}
+
+async function deleteReminder(index) {
+  const contactId = document.getElementById('reminders-contact-id').value;
+  const contact = contacts.find(c => (c._id || c.id) === contactId);
+  if (!contact || !contact.reminders) return;
+  
+  contact.reminders.splice(index, 1);
+  contact.updatedAt = new Date().toISOString();
+  
+  await saveContact(contact);
+  renderRemindersList(contact);
+  renderContacts();
+  
+  Analytics.track('reminder_deleted');
+}
+
+// ============== SAVE CONTACT HELPER ==============
+async function saveContact(contact) {
+  const contactId = contact._id || contact.id;
+  
+  if (!navigator.onLine) {
+    const index = contacts.findIndex(c => (c._id || c.id) === contactId);
+    if (index !== -1) contacts[index] = contact;
+    OfflineCache.saveContacts(contacts);
+    OfflineQueue.addToQueue({
+      type: 'update_contact',
+      contactId,
+      contact
+    });
+    return;
+  }
+  
+  try {
+    const response = await fetch(`${CONFIG.API_URL}/api/contacts/${contactId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken}`
+      },
+      body: JSON.stringify(contact)
+    });
+    
+    if (response.ok) {
+      const updated = await response.json();
+      const index = contacts.findIndex(c => (c._id || c.id) === contactId);
+      if (index !== -1) contacts[index] = updated;
+      OfflineCache.saveContacts(contacts);
+    }
+  } catch (error) {
+    console.error('Save error:', error);
+    OfflineQueue.addToQueue({
+      type: 'update_contact',
+      contactId,
+      contact
+    });
+  }
+}
+
+// ============== CONTACT PARSING ==============
 function findSimilarContacts(name) {
   const similar = [];
   const nameLower = name.toLowerCase();
@@ -619,6 +904,7 @@ function searchContacts(query) {
   });
 }
 
+// ============== CHAT ==============
 async function sendMessage() {
   const input = document.getElementById('message-input');
   const text = input.value.trim();
@@ -667,14 +953,13 @@ async function sendMessage() {
       isProcessing = false;
       return;
     } else {
-      addBotMessage("Please answer 'yes' if same person, or 'no' if different person.");
+      addBotMessage("Please answer 'yes' if same person, or 'no' if different.");
       hideLoading();
       isProcessing = false;
       return;
     }
   }
   
-  // Detect intent - works offline with fallback
   let isQuery = false;
   if (contacts.length > 0) {
     if (navigator.onLine) {
@@ -692,21 +977,18 @@ async function sendMessage() {
           isQuery = intentData.intent === 'query';
         }
       } catch (err) {
-        // Fallback to local detection
         const queryWords = ['who', 'find', 'search', 'show', 'list', 'how much', 'owe', '?'];
         isQuery = queryWords.some(word => text.toLowerCase().includes(word));
       }
     } else {
-      // Offline: use local detection
       const queryWords = ['who', 'find', 'search', 'show', 'list', 'how much', 'owe', '?'];
       isQuery = queryWords.some(word => text.toLowerCase().includes(word));
     }
   }
  
   if (isQuery && contacts.length > 0) {
-    Analytics.track('search_query', { query: text, offline: !navigator.onLine });
+    Analytics.track('search_query', { query: text });
     
-    // Try AI search if online
     if (navigator.onLine) {
       try {
         const searchResult = await fetch(`${CONFIG.API_URL}/api/contacts/search-ai`, {
@@ -715,7 +997,7 @@ async function sendMessage() {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${authToken}`
           },
-          body: JSON.stringify({ query: text, contacts: contacts })
+          body: JSON.stringify({ query: text, contacts })
         });
         if (searchResult.ok) {
           const data = await searchResult.json();
@@ -725,19 +1007,17 @@ async function sendMessage() {
           return;
         }
       } catch (err) {
-        console.log('AI search failed, using local');
+        console.log('AI search failed');
       }
     }
     
-    // Fallback to local search (works offline)
     const results = searchContacts(text);
     if (results.length > 0) {
       let response = `Found ${results.length} match${results.length > 1 ? 'es' : ''}:\n\n`;
       results.forEach(contact => {
-        response += `**${contact.name.toUpperCase()}**\n`;
-        if (contact.skills?.length > 0) response += `Skills: ${contact.skills.join(', ')}\n`;
-        if (contact.phone) response += `Phone: ${contact.phone}\n`;
-        if (contact.email) response += `Email: ${contact.email}\n`;
+        response += `• ${contact.name.toUpperCase()}`;
+        if (contact.skills?.length > 0) response += ` - ${contact.skills.join(', ')}`;
+        if (contact.phone) response += ` | ${contact.phone}`;
         response += '\n';
       });
       addBotMessage(response);
@@ -745,7 +1025,6 @@ async function sendMessage() {
       addBotMessage("No matches found. Try a different search!");
     }
   } else {
-    // Parse contact - works offline with local parser
     const parsed = await parseContactHybrid(text);
     
     if (parsed.contacts.length > 0) {
@@ -764,14 +1043,12 @@ async function sendMessage() {
       } else {
         const stats = await syncContacts([newContact]);
         if (stats) {
-          Analytics.track('contact_added', { name: newContact.name, offline: !navigator.onLine });
-          let response = 'Got it! ';
-          if (stats.created > 0) response += `Added ${newContact.name}.`;
-          if (stats.updated > 0) response += `Updated info.`;
+          Analytics.track('contact_added', { name: newContact.name });
+          let response = `Added ${newContact.name}`;
           if (!navigator.onLine) response += ' (will sync when online)';
           addBotMessage(response);
         } else {
-          addBotMessage("Saved locally. Will sync when connection is available.");
+          addBotMessage("Saved locally. Will sync when online.");
         }
       }
     } else {
@@ -816,13 +1093,13 @@ function hideLoading() {
   if (loading) loading.remove();
 }
 
+// ============== VIEW SWITCHING ==============
 function switchView(view) {
   currentView = view;
-  Analytics.track('view_switched', { view: view });
+  Analytics.track('view_switched', { view });
   
-  const tabs = document.querySelectorAll('.tab:not(.logout-btn)');
-  tabs.forEach(tab => tab.classList.remove('active'));
-  event.target.classList.add('active');
+  document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+  event.target.closest('.tab').classList.add('active');
   
   if (view === 'chat') {
     document.getElementById('chat-view').classList.remove('hidden');
@@ -834,6 +1111,7 @@ function switchView(view) {
   }
 }
 
+// ============== RENDER CONTACTS ==============
 function renderContacts() {
   const grid = document.getElementById('contacts-grid');
   
@@ -851,23 +1129,38 @@ function renderContacts() {
     card.className = 'contact-card';
     card.dataset.index = index;
     
-    // Check if this contact has pending offline changes
     const isPending = OfflineQueue.getQueue().some(q => 
       q.contact?.name === contact.name || q.contactId === (contact._id || contact.id)
     );
+    
+    const notesCount = (contact.notes || []).length;
+    const remindersCount = (contact.reminders || []).length;
+    const contactId = contact._id || contact.id;
     
     let html = `
       <div class="contact-card-header">
         <h3 class="contact-name">${escapeHtml(contact.name)}${isPending ? ' <span class="pending-badge">⏳</span>' : ''}</h3>
         <div class="contact-actions">
-          <button class="icon-btn-sm edit-btn" data-index="${index}" title="Edit">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <button class="icon-btn-sm notes" onclick="openNotesModal('${contactId}')" title="Notes">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+            </svg>
+          </button>
+          <button class="icon-btn-sm reminder" onclick="openRemindersModal('${contactId}')" title="Reminders">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"></circle>
+              <polyline points="12 6 12 12 16 14"></polyline>
+            </svg>
+          </button>
+          <button class="icon-btn-sm" onclick="editContact('${contactId}')" title="Edit">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
               <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
             </svg>
           </button>
-          <button class="icon-btn-sm delete delete-btn" data-index="${index}" title="Delete">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <button class="icon-btn-sm delete" onclick="deleteContact('${contactId}')" title="Delete">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polyline points="3 6 5 6 21 6"></polyline>
               <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
             </svg>
@@ -884,6 +1177,29 @@ function renderContacts() {
     
     if (contact.phone) html += `<div class="contact-detail"><strong>Phone:</strong> ${escapeHtml(contact.phone)}</div>`;
     if (contact.email) html += `<div class="contact-detail"><strong>Email:</strong> ${escapeHtml(contact.email)}</div>`;
+    
+    // Notes & Reminders badges
+    if (notesCount > 0 || remindersCount > 0) {
+      html += '<div class="contact-meta">';
+      if (notesCount > 0) {
+        html += `<span class="meta-badge notes" onclick="openNotesModal('${contactId}')">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path>
+          </svg>
+          ${notesCount} note${notesCount > 1 ? 's' : ''}
+        </span>`;
+      }
+      if (remindersCount > 0) {
+        html += `<span class="meta-badge reminders" onclick="openRemindersModal('${contactId}')">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polyline points="12 6 12 12 16 14"></polyline>
+          </svg>
+          ${remindersCount} reminder${remindersCount > 1 ? 's' : ''}
+        </span>`;
+      }
+      html += '</div>';
+    }
     
     if (contact.debts?.length > 0) {
       contact.debts.forEach(debt => {
@@ -904,48 +1220,18 @@ function renderContacts() {
     grid.appendChild(card);
   });
   
-  document.querySelectorAll('.edit-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      const index = e.currentTarget.dataset.index;
-      const contact = contacts[index];
-      if (contact) editContact(contact._id || contact.id);
-    });
-  });
-  
-  document.querySelectorAll('.delete-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      const index = e.currentTarget.dataset.index;
-      const contact = contacts[index];
-      if (contact) deleteContact(contact._id || contact.id);
-    });
-  });
+  initSwipeToDelete();
 }
 
 function updateContactCount() {
   document.getElementById('contact-count').textContent = contacts.length;
 }
 
-function handleLogout() {
-  if (confirm('Are you sure you want to logout?')) {
-    Analytics.track('user_logout');
-    Analytics.reset();
-    localStorage.removeItem(CONFIG.STORAGE_KEYS.AUTH_TOKEN);
-    localStorage.removeItem(CONFIG.STORAGE_KEYS.CURRENT_USER);
-    window.location.replace(CONFIG.AUTH_PAGE);
-  }
-}
-
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
-
-document.addEventListener('DOMContentLoaded', init);
-
+// ============== MODALS ==============
 function openQuickAdd() {
   Analytics.track('quick_add_opened');
   document.getElementById('quick-add-modal').classList.remove('hidden');
+  document.getElementById('qa-name').focus();
 }
 
 function closeQuickAdd() {
@@ -993,68 +1279,19 @@ async function submitQuickAdd() {
       existing.updatedAt = new Date().toISOString();
       await syncContacts([existing]);
       Analytics.track('contact_merged', { name: existing.name });
-      addBotMessage(`Updated ${existing.name}'s info!`);
+      addBotMessage(`Updated ${existing.name}!`);
     } else {
       await syncContacts([newContact]);
-      Analytics.track('contact_added', { name: newContact.name, method: 'quick_add' });
+      Analytics.track('contact_added', { name: newContact.name });
       addBotMessage(`Added ${name}!`);
     }
   } else {
     await syncContacts([newContact]);
-    Analytics.track('contact_added', { name: newContact.name, method: 'quick_add' });
+    Analytics.track('contact_added', { name: newContact.name });
     addBotMessage(`Added ${name}!`);
   }
   
   closeQuickAdd();
-}
-
-async function deleteContact(contactId) {
-  if (!confirm('Delete this contact?')) return;
-  
-  // If offline, delete locally and queue
-  if (!navigator.onLine) {
-    contacts = contacts.filter(c => (c._id || c.id) !== contactId);
-    OfflineCache.saveContacts(contacts);
-    OfflineQueue.addToQueue({
-      type: 'delete_contact',
-      contactId: contactId
-    });
-    updateContactCount();
-    renderContacts();
-    Analytics.track('contact_deleted', { offline: true });
-    addBotMessage('Contact deleted! (will sync when online)');
-    return;
-  }
-  
-  try {
-    const response = await fetch(`${CONFIG.API_URL}/api/contacts/${contactId}`, {
-      method: 'DELETE',
-      headers: { 'Authorization': `Bearer ${authToken}` }
-    });
-    
-    if (response.ok) {
-      Analytics.track('contact_deleted');
-      contacts = contacts.filter(c => (c._id || c.id) !== contactId);
-      OfflineCache.saveContacts(contacts);
-      updateContactCount();
-      renderContacts();
-      addBotMessage('Contact deleted!');
-    } else {
-      addBotMessage('Failed to delete contact.');
-    }
-  } catch (error) {
-    console.error('Delete error:', error);
-    // Queue for later
-    OfflineQueue.addToQueue({
-      type: 'delete_contact',
-      contactId: contactId
-    });
-    contacts = contacts.filter(c => (c._id || c.id) !== contactId);
-    OfflineCache.saveContacts(contacts);
-    updateContactCount();
-    renderContacts();
-    addBotMessage('Contact deleted locally. Will sync when online.');
-  }
 }
 
 function editContact(contactId) {
@@ -1063,7 +1300,7 @@ function editContact(contactId) {
   
   Analytics.track('contact_edit_opened');
   
-  document.getElementById('edit-contact-id').value = contact._id || contact.id;
+  document.getElementById('edit-contact-id').value = contactId;
   document.getElementById('edit-name').value = contact.name || '';
   document.getElementById('edit-phone').value = contact.phone || '';
   document.getElementById('edit-email').value = contact.email || '';
@@ -1087,111 +1324,56 @@ async function submitEdit() {
   contact.skills = document.getElementById('edit-skills').value.split(',').map(s => s.trim()).filter(s => s);
   contact.updatedAt = new Date().toISOString();
   
-  // If offline, save locally and queue
+  await saveContact(contact);
+  renderContacts();
+  closeEditModal();
+  
+  Analytics.track('contact_edited');
+  addBotMessage(`Updated ${contact.name}!`);
+}
+
+async function deleteContact(contactId) {
+  if (!confirm('Delete this contact?')) return;
+  
   if (!navigator.onLine) {
-    const index = contacts.findIndex(c => (c._id || c.id) === contactId);
-    if (index !== -1) contacts[index] = contact;
+    contacts = contacts.filter(c => (c._id || c.id) !== contactId);
     OfflineCache.saveContacts(contacts);
-    OfflineQueue.addToQueue({
-      type: 'update_contact',
-      contactId: contactId,
-      contact: contact
-    });
+    OfflineQueue.addToQueue({ type: 'delete_contact', contactId });
+    updateContactCount();
     renderContacts();
-    closeEditModal();
-    Analytics.track('contact_edited', { offline: true });
-    addBotMessage(`Updated ${contact.name}! (will sync when online)`);
+    Analytics.track('contact_deleted');
+    addBotMessage('Contact deleted! (will sync when online)');
     return;
   }
   
   try {
     const response = await fetch(`${CONFIG.API_URL}/api/contacts/${contactId}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${authToken}`
-      },
-      body: JSON.stringify(contact)
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${authToken}` }
     });
     
     if (response.ok) {
-      Analytics.track('contact_edited');
-      const updated = await response.json();
-      const index = contacts.findIndex(c => (c._id || c.id) === contactId);
-      if (index !== -1) contacts[index] = updated;
+      Analytics.track('contact_deleted');
+      contacts = contacts.filter(c => (c._id || c.id) !== contactId);
       OfflineCache.saveContacts(contacts);
+      updateContactCount();
       renderContacts();
+      addBotMessage('Contact deleted!');
+    } else {
+      addBotMessage('Failed to delete contact.');
     }
   } catch (error) {
-    console.error('Update error:', error);
-    // Queue for later
-    OfflineQueue.addToQueue({
-      type: 'update_contact',
-      contactId: contactId,
-      contact: contact
-    });
-  }
-  
-  closeEditModal();
-  addBotMessage(`Updated ${contact.name}!`);
-}
-
-let touchStartX = 0;
-let touchCurrentX = 0;
-let swipingCard = null;
-const SWIPE_THRESHOLD = 100;
-
-function initSwipeToDelete() {
-  const grid = document.getElementById('contacts-grid');
-  if (!grid) return;
-  grid.addEventListener('touchstart', handleTouchStart, { passive: true });
-  grid.addEventListener('touchmove', handleTouchMove, { passive: false });
-  grid.addEventListener('touchend', handleTouchEnd, { passive: true });
-}
-
-function handleTouchStart(e) {
-  const card = e.target.closest('.contact-card');
-  if (!card) return;
-  touchStartX = e.touches[0].clientX;
-  touchCurrentX = 0;
-  swipingCard = card;
-}
-
-function handleTouchMove(e) {
-  if (!swipingCard) return;
-  touchCurrentX = e.touches[0].clientX;
-  const diffX = touchStartX - touchCurrentX;
-  if (diffX > 0) {
-    e.preventDefault();
-    const moveX = Math.min(diffX, 150);
-    swipingCard.style.transform = `translateX(-${moveX}px)`;
-    swipingCard.classList.add('swiping');
+    console.error('Delete error:', error);
+    OfflineQueue.addToQueue({ type: 'delete_contact', contactId });
+    contacts = contacts.filter(c => (c._id || c.id) !== contactId);
+    OfflineCache.saveContacts(contacts);
+    updateContactCount();
+    renderContacts();
+    addBotMessage('Contact deleted locally. Will sync when online.');
   }
 }
 
-function handleTouchEnd(e) {
-  if (!swipingCard) return;
-  const diffX = touchStartX - touchCurrentX;
-  
-  if (diffX > SWIPE_THRESHOLD && touchCurrentX !== 0) {
-    const index = swipingCard.dataset.index;
-    const contact = contacts[index];
-    if (contact) {
-      if (navigator.vibrate) navigator.vibrate(50);
-      swipingCard.style.transform = 'translateX(-100%)';
-      swipingCard.style.opacity = '0';
-      setTimeout(() => deleteContact(contact._id || contact.id), 200);
-    }
-  } else {
-    swipingCard.style.transform = '';
-    swipingCard.classList.remove('swiping');
-  }
-  
-  swipingCard = null;
-  touchStartX = 0;
-  touchCurrentX = 0;
-}
-
+// ============== FEEDBACK ==============
 function openFeedback() {
   Analytics.track('feedback_opened');
   document.getElementById('feedback-modal').classList.remove('hidden');
@@ -1238,13 +1420,85 @@ async function submitFeedback() {
   addBotMessage('Thanks for your feedback! 💜');
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-  initSwipeToDelete();
+// ============== LOGOUT ==============
+function handleLogout() {
+  if (confirm('Are you sure you want to logout?')) {
+    Analytics.track('user_logout');
+    Analytics.reset();
+    localStorage.removeItem(CONFIG.STORAGE_KEYS.AUTH_TOKEN);
+    localStorage.removeItem(CONFIG.STORAGE_KEYS.CURRENT_USER);
+    window.location.replace(CONFIG.AUTH_PAGE);
+  }
+}
+
+// ============== UTILITIES ==============
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// ============== SWIPE TO DELETE ==============
+let touchStartX = 0;
+let touchCurrentX = 0;
+let swipingCard = null;
+const SWIPE_THRESHOLD = 100;
+
+function initSwipeToDelete() {
+  const grid = document.getElementById('contacts-grid');
+  if (!grid) return;
   
-  document.querySelectorAll('.rating-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.rating-btn').forEach(b => b.classList.remove('selected'));
-      btn.classList.add('selected');
-    });
-  });
-});
+  grid.removeEventListener('touchstart', handleTouchStart);
+  grid.removeEventListener('touchmove', handleTouchMove);
+  grid.removeEventListener('touchend', handleTouchEnd);
+  
+  grid.addEventListener('touchstart', handleTouchStart, { passive: true });
+  grid.addEventListener('touchmove', handleTouchMove, { passive: false });
+  grid.addEventListener('touchend', handleTouchEnd, { passive: true });
+}
+
+function handleTouchStart(e) {
+  const card = e.target.closest('.contact-card');
+  if (!card) return;
+  touchStartX = e.touches[0].clientX;
+  touchCurrentX = 0;
+  swipingCard = card;
+}
+
+function handleTouchMove(e) {
+  if (!swipingCard) return;
+  touchCurrentX = e.touches[0].clientX;
+  const diffX = touchStartX - touchCurrentX;
+  if (diffX > 0) {
+    e.preventDefault();
+    const moveX = Math.min(diffX, 150);
+    swipingCard.style.transform = `translateX(-${moveX}px)`;
+    swipingCard.classList.add('swiping');
+  }
+}
+
+function handleTouchEnd() {
+  if (!swipingCard) return;
+  const diffX = touchStartX - touchCurrentX;
+  
+  if (diffX > SWIPE_THRESHOLD && touchCurrentX !== 0) {
+    const index = swipingCard.dataset.index;
+    const contact = contacts[index];
+    if (contact) {
+      if (navigator.vibrate) navigator.vibrate(50);
+      swipingCard.style.transform = 'translateX(-100%)';
+      swipingCard.style.opacity = '0';
+      setTimeout(() => deleteContact(contact._id || contact.id), 200);
+    }
+  } else {
+    swipingCard.style.transform = '';
+    swipingCard.classList.remove('swiping');
+  }
+  
+  swipingCard = null;
+  touchStartX = 0;
+  touchCurrentX = 0;
+}
+
+// ============== INIT ==============
+document.addEventListener('DOMContentLoaded', init);
