@@ -11,9 +11,9 @@ let pendingConfirmation = null; // For duplicate detection
 // Initialize
 function init() {
     // Initialize PostHog
-    if (CONFIG.POSTHOG_KEY && CONFIG.POSTHOG_KEY !== 'your_posthog_api_key_here') {
+    /*if (CONFIG.POSTHOG_KEY && CONFIG.POSTHOG_KEY !== 'your_posthog_api_key_here') {
     posthog.init(CONFIG.POSTHOG_KEY, { api_host: 'https://app.posthog.com' });
-    }
+    }*/
   // Check if logged in
   if (!authToken) {
     window.location.href = CONFIG.AUTH_PAGE;
@@ -28,6 +28,9 @@ function init() {
 }
 
 async function verifyToken() {
+  console.log('🔍 verifyToken called');
+  console.log('🔑 Token:', authToken);
+  
   try {
     const response = await fetch(`${CONFIG.API_URL}/api/auth/me`, {
       headers: {
@@ -35,29 +38,29 @@ async function verifyToken() {
       }
     });
 
+    console.log('📡 Response status:', response.status);
+
     if (response.ok) {
       currentUser = await response.json();
+      console.log('✅ User verified:', currentUser.email);
       await loadContacts();
       addBotMessage(`Welcome back! You have ${contacts.length} contacts saved.`);
       
-      // Identify user in PostHog
       if (window.posthog) {
         posthog.identify(currentUser.email, {
           name: currentUser.name,
           plan: currentUser.plan
         });
       }
-      trackEvent('app_opened', { contactCount: contacts.length });
+      // trackEvent('app_opened', { contactCount: contacts.length });
     } else {
-      // Token invalid - clear and redirect ONCE
-      console.log('Token invalid, clearing...');
+      console.log('❌ Token invalid, redirecting...');
       localStorage.removeItem(CONFIG.STORAGE_KEYS.AUTH_TOKEN);
       localStorage.removeItem(CONFIG.STORAGE_KEYS.CURRENT_USER);
-      // Use replace to prevent back button loop
       window.location.replace(CONFIG.AUTH_PAGE);
     }
   } catch (error) {
-    console.error('Token verification failed:', error);
+    console.error('❌ verifyToken error:', error);
     localStorage.removeItem(CONFIG.STORAGE_KEYS.AUTH_TOKEN);
     localStorage.removeItem(CONFIG.STORAGE_KEYS.CURRENT_USER);
     window.location.replace(CONFIG.AUTH_PAGE);
