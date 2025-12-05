@@ -1,66 +1,38 @@
 // app.js - Main Application Logic
 
-// State
 let authToken = localStorage.getItem('authToken');
 let currentUser = null;
 let contacts = [];
 let currentView = 'chat';
 let isProcessing = false;
-let pendingConfirmation = null; // For duplicate detection
+let pendingConfirmation = null;
 
-// Initialize
 function init() {
-    // Initialize PostHog
-    /*if (CONFIG.POSTHOG_KEY && CONFIG.POSTHOG_KEY !== 'your_posthog_api_key_here') {
-    posthog.init(CONFIG.POSTHOG_KEY, { api_host: 'https://app.posthog.com' });
-    }*/
-  // Check if logged in
   if (!authToken) {
-    window.location.href = CONFIG.AUTH_PAGE;
+    window.location.replace(CONFIG.AUTH_PAGE);
     return;
   }
-
-  // Verify token and load app
   verifyToken();
-  
-  // Setup event listeners
   setupEventListeners();
 }
 
 async function verifyToken() {
-  console.log('🔍 verifyToken called');
-  console.log('🔑 Token:', authToken);
-  
   try {
     const response = await fetch(`${CONFIG.API_URL}/api/auth/me`, {
-      headers: {
-        'Authorization': `Bearer ${authToken}`
-      }
+      headers: { 'Authorization': `Bearer ${authToken}` }
     });
-
-    console.log('📡 Response status:', response.status);
 
     if (response.ok) {
       currentUser = await response.json();
-      console.log('✅ User verified:', currentUser.email);
       await loadContacts();
       addBotMessage(`Welcome back! You have ${contacts.length} contacts saved.`);
-      
-      if (window.posthog) {
-        posthog.identify(currentUser.email, {
-          name: currentUser.name,
-          plan: currentUser.plan
-        });
-      }
-      // trackEvent('app_opened', { contactCount: contacts.length });
     } else {
-      console.log('❌ Token invalid, redirecting...');
       localStorage.removeItem(CONFIG.STORAGE_KEYS.AUTH_TOKEN);
       localStorage.removeItem(CONFIG.STORAGE_KEYS.CURRENT_USER);
       window.location.replace(CONFIG.AUTH_PAGE);
     }
   } catch (error) {
-    console.error('❌ verifyToken error:', error);
+    console.error('verifyToken error:', error);
     localStorage.removeItem(CONFIG.STORAGE_KEYS.AUTH_TOKEN);
     localStorage.removeItem(CONFIG.STORAGE_KEYS.CURRENT_USER);
     window.location.replace(CONFIG.AUTH_PAGE);
@@ -68,25 +40,17 @@ async function verifyToken() {
 }
 
 function setupEventListeners() {
-  // Enter key for message input
   document.getElementById('save-edit-btn')?.addEventListener('click', submitEdit);
   document.getElementById('message-input')?.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') sendMessage();
   });
 }
 
-// ========================================
-// CONTACT MANAGEMENT
-// ========================================
-
 async function loadContacts() {
   try {
     const response = await fetch(`${CONFIG.API_URL}/api/contacts`, {
-      headers: {
-        'Authorization': `Bearer ${authToken}`
-      }
+      headers: { 'Authorization': `Bearer ${authToken}` }
     });
-
     if (response.ok) {
       contacts = await response.json();
       updateContactCount();
@@ -107,7 +71,6 @@ async function syncContacts(newContacts) {
       },
       body: JSON.stringify({ contacts: newContacts })
     });
-
     if (response.ok) {
       const data = await response.json();
       contacts = data.contacts;
@@ -121,37 +84,25 @@ async function syncContacts(newContacts) {
   }
 }
 
-// ========================================
-// CONTACT PARSING
-// ========================================
-// === FUZZY NAME MATCHING ===
 function findSimilarContacts(name) {
   const similar = [];
   const nameLower = name.toLowerCase();
   
   contacts.forEach(contact => {
     const contactNameLower = contact.name.toLowerCase();
-    
-    // Exact match
     if (contactNameLower === nameLower) {
       similar.push({ contact, similarity: 1.0, reason: 'exact' });
       return;
     }
-    
-    // Nickname/shortened (Sam vs Samson)
     if (nameLower.startsWith(contactNameLower) || contactNameLower.startsWith(nameLower)) {
       similar.push({ contact, similarity: 0.9, reason: 'nickname' });
       return;
     }
-    
-    // Typo/close match (Samson vs Samsoon)
     const distance = levenshteinDistance(nameLower, contactNameLower);
     if (distance <= 2) {
       similar.push({ contact, similarity: 0.8, reason: 'typo' });
       return;
     }
-    
-    // Same first name, different last (John Smith vs John Doe)
     const firstName1 = nameLower.split(' ')[0];
     const firstName2 = contactNameLower.split(' ')[0];
     if (firstName1 === firstName2 && nameLower.includes(' ') && contactNameLower.includes(' ')) {
@@ -162,44 +113,32 @@ function findSimilarContacts(name) {
   return similar.sort((a, b) => b.similarity - a.similarity);
 }
 
-// Levenshtein distance (edit distance)
 function levenshteinDistance(str1, str2) {
   const matrix = [];
-  for (let i = 0; i <= str2.length; i++) {
-    matrix[i] = [i];
-  }
-  for (let j = 0; j <= str1.length; j++) {
-    matrix[0][j] = j;
-  }
+  for (let i = 0; i <= str2.length; i++) matrix[i] = [i];
+  for (let j = 0; j <= str1.length; j++) matrix[0][j] = j;
   for (let i = 1; i <= str2.length; i++) {
     for (let j = 1; j <= str1.length; j++) {
       if (str2.charAt(i - 1) === str1.charAt(j - 1)) {
         matrix[i][j] = matrix[i - 1][j - 1];
       } else {
-        matrix[i][j] = Math.min(
-          matrix[i - 1][j - 1] + 1,
-          matrix[i][j - 1] + 1,
-          matrix[i - 1][j] + 1
-        );
+        matrix[i][j] = Math.min(matrix[i - 1][j - 1] + 1, matrix[i][j - 1] + 1, matrix[i - 1][j] + 1);
       }
     }
   }
   return matrix[str2.length][str1.length];
 }
 
-
-// Enhanced parseContactInfo with context tracking
 function parseContactInfo(text) {
   const result = { contacts: [] };
-  const sentences = text.split(/[.!?\n,]+/).filter(s => s.trim()); // Split on commas too
+  const sentences = text.split(/[.!?\n,]+/).filter(s => s.trim());
   let currentPerson = null;
-  let lastMentionedName = null; // Track the last name mentioned
+  let lastMentionedName = null;
   
   sentences.forEach(sentence => {
     sentence = sentence.trim();
     const lowerSentence = sentence.toLowerCase();
     
-    // === NAME EXTRACTION ===
     const namePatterns = [
       /(?:met|spoke with|talked to|connected with|saw)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/i,
       /^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\s+(?:does|is|works|owes|likes|wants)/i,
@@ -218,36 +157,26 @@ function parseContactInfo(text) {
       }
     }
     
-    // Fallback: Find capitalized words
     if (!name) {
-        const commonWords = ['i', 'me', 'my', 'the', 'a', 'an', 'is', 'was', 'were', 'are', 'he', 'she', 'it', 'this', 'that', 'yesterday', 'today', 'tomorrow', 'last', 'next', 'week', 'month', 'year', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+      const commonWords = ['i', 'me', 'my', 'the', 'a', 'an', 'is', 'was', 'were', 'are', 'he', 'she', 'it', 'this', 'that', 'yesterday', 'today', 'tomorrow', 'last', 'next', 'week', 'month', 'year', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
       const words = sentence.split(' ');
       for (const word of words) {
         const cleanWord = word.replace(/[^a-zA-Z]/g, '');
-        if (cleanWord.length > 2 && 
-            cleanWord[0] === cleanWord[0].toUpperCase() && 
-            cleanWord === cleanWord[0] + cleanWord.slice(1).toLowerCase() &&
-            !commonWords.includes(cleanWord.toLowerCase()) &&
-            !/\d/.test(word)) {
+        if (cleanWord.length > 2 && cleanWord[0] === cleanWord[0].toUpperCase() && cleanWord === cleanWord[0] + cleanWord.slice(1).toLowerCase() && !commonWords.includes(cleanWord.toLowerCase()) && !/\d/.test(word)) {
           name = cleanWord.toLowerCase();
           break;
         }
       }
     }
 
-    // Handle pronouns (he/she/they) referring to last mentioned person
     if (!name && lastMentionedName && /^(he|she|they|him|her|them)\s+/i.test(sentence)) {
       name = lastMentionedName;
     }
 
-    // Create or find contact
     if (name) {
-      lastMentionedName = name; // Remember this name for next sentence
-      
-      // Check if we already have this contact in current parse
+      lastMentionedName = name;
       currentPerson = result.contacts.find(c => c.name === name);
       
-      // If new contact, validate we have meaningful info
       if (!currentPerson) {
         const phoneMatch = sentence.match(/(\d{3}[-.]?\d{3}[-.]?\d{4}|\d{10})/);
         const emailMatch = sentence.match(/([a-z0-9._-]+@[a-z0-9.-]+\.[a-z]{2,})/i);
@@ -255,12 +184,8 @@ function parseContactInfo(text) {
         const hasSkills = lowerSentence.match(/does\s+\w+|is\s+a\s+\w+|works\s+|specializes\s+in/);
         const hasContext = sentence.length > 20;
         
-        // Skip if just a name with no other info
-        if (!hasContactInfo && !hasSkills && !hasContext) {
-          return; // Don't create contact
-        }
+        if (!hasContactInfo && !hasSkills && !hasContext) return;
         
-        // Create new contact
         currentPerson = {
           id: `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           name: name,
@@ -279,14 +204,12 @@ function parseContactInfo(text) {
     }
     
     if (currentPerson) {
-      // === CONTACT INFO ===
       const phoneMatch = sentence.match(/(\d{3}[-.]?\d{3}[-.]?\d{4}|\d{10})/);
       if (phoneMatch) currentPerson.phone = phoneMatch[1];
       
       const emailMatch = sentence.match(/([a-z0-9._-]+@[a-z0-9.-]+\.[a-z]{2,})/i);
       if (emailMatch) currentPerson.email = emailMatch[1];
       
-      // === SKILLS ===
       const skillPatterns = [
         /(?:he|she|they)?\s*does\s+([\w\s]+?)(?:\s*,|\s+his|\s+her|\s+their|$)/i,
         /is\s+(?:a|an)\s+([\w\s]+?)(?:\s*,|\s+and|$)/i,
@@ -298,10 +221,8 @@ function parseContactInfo(text) {
         const match = lowerSentence.match(pattern);
         if (match) {
           let skillText = match[1].trim();
-          // AGGRESSIVE CLEANING
-          skillText = skillText.split(/\s+(his|her|their|the|number|phone|email|with\s+number|and\s+his|and\s+her)/i)[0].trim();
+          skillText = skillText.split(/\s+(his|her|their|the|number|phone|email)/i)[0].trim();
           skillText = skillText.replace(/\d+/g, '').replace(/\s+/g, ' ').trim();
-          skillText = skillText.replace(/\s+(with|at|is)$/i, '').trim();
           
           if (skillText.length > 2) {
             const skills = skillText.split(/\s+and\s+|\s*,\s+/);
@@ -315,7 +236,6 @@ function parseContactInfo(text) {
         }
       }
       
-      // === DEBTS ===
       const debtPatterns = [
         /(?:i\s+)?owe(?:s|d)?\s+(?:him|her|them)?\s*\$?(\d+)/i,
         /(?:he|she|they)\s+owe(?:s)?\s+me\s*\$?(\d+)/i,
@@ -336,60 +256,14 @@ function parseContactInfo(text) {
           });
         }
       }
-      
-      // === REMINDERS/MEETINGS ===
-      const reminderPatterns = [
-        /meeting\s+(?:with\s+)?(?:on|by|next)?\s*(monday|tuesday|wednesday|thursday|friday|saturday|sunday|tomorrow|today)/i,
-        /(?:on|by)\s+([a-z]+\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s+\d{4})?)/i,
-        /(?:call|email|contact|reach out to)\s+(?:him|her|them)?\s*(?:on|by|about)/i
-      ];
-      
-      for (const pattern of reminderPatterns) {
-        const match = sentence.match(pattern);
-        if (match) {
-          currentPerson.reminders.push({
-            text: sentence,
-            date: match[1] || 'unspecified',
-            createdAt: new Date().toISOString()
-          });
-        }
-      }
-      
-      // === PREFERENCES/METADATA ===
-      const preferencePatterns = [
-        /likes?\s+([\w\s]+?)(?:\s+and|\s*,|$)/i,
-        /allergic to\s+([\w\s]+?)(?:\s+and|\s*,|$)/i,
-        /(?:works?|worked)\s+at\s+([\w\s]+?)(?:\s+as|\s*,|$)/i,
-        /(?:lives?|lived)\s+(?:in|at)\s+([\w\s]+?)(?:\s*,|$)/i,
-        /birthday\s+(?:is\s+)?(?:on\s+)?([a-z]+\s+\d{1,2})/i
-      ];
-      
-      for (const pattern of preferencePatterns) {
-        const match = lowerSentence.match(pattern);
-        if (match) {
-          const key = pattern.source.split(/[\s(]/)[0];
-          currentPerson.metadata[key] = match[1].trim();
-        }
-      }
-      
-      // === GENERAL NOTES ===
-      const isInfoExtraction = lowerSentence.match(/number is|email is|does\s+\w+|is\s+a\s+\w+/);
-      if (sentence.length > 15 && !isInfoExtraction) {
-        currentPerson.notes.push({
-          text: sentence,
-          date: new Date().toISOString()
-        });
-      }
     }
   });
   
   return result;
 }
-// === AI-POWERED PARSING (Optional Enhancement) ===
+
 async function parseWithAI(text) {
-  // Check if online
   if (!navigator.onLine) return null;
-  
   try {
     const response = await fetch(`${CONFIG.API_URL}/api/contacts/parse-ai`, {
       method: 'POST',
@@ -399,113 +273,39 @@ async function parseWithAI(text) {
       },
       body: JSON.stringify({ text })
     });
-    
-    if (response.ok) {
-      return await response.json();
-    }
+    if (response.ok) return await response.json();
   } catch (error) {
-    console.log('AI parsing unavailable, using regex fallback');
+    console.log('AI parsing unavailable');
   }
-  
   return null;
 }
 
-// === SIMPLE AI-FIRST PARSER ===
 async function parseContactHybrid(text) {
-  // If online, always use AI
   if (navigator.onLine) {
-    console.log('🤖 Using AI parsing...');
     try {
       const aiResult = await parseWithAI(text);
-      console.log('📦 AI returned:', aiResult);
-      
       if (aiResult && aiResult.contacts && aiResult.contacts.length > 0) {
-        console.log('✅ AI result:', aiResult);
         return aiResult;
       }
     } catch (err) {
-      console.error('❌ AI error:', err);
+      console.error('AI error:', err);
     }
   }
-  
-  // Fallback to regex
-  console.log('⚠️ Using regex fallback');
   return parseContactInfo(text);
 }
 
-// Cache messages for offline sync
-function cacheMessageForSync(text) {
-  const cached = JSON.parse(localStorage.getItem('pendingMessages') || '[]');
-  cached.push({
-    text: text,
-    timestamp: new Date().toISOString()
-  });
-  localStorage.setItem('pendingMessages', JSON.stringify(cached));
-}
-
-// Sync cached messages when back online
-async function syncCachedMessages() {
-  const cached = JSON.parse(localStorage.getItem('pendingMessages') || '[]');
-  
-  if (cached.length === 0) return;
-  
-  console.log(`📤 Syncing ${cached.length} cached messages...`);
-  
-  for (const msg of cached) {
-    const result = await parseWithAI(msg.text);
-    if (result && result.contacts && result.contacts.length > 0) {
-      await syncContacts(result.contacts);
-    }
-  }
-  
-  // Clear cache after sync
-  localStorage.removeItem('pendingMessages');
-  console.log('✅ Cached messages synced!');
-}
-
-// Check for cached messages on load
-window.addEventListener('online', () => {
-  console.log('🌐 Back online - syncing cached messages...');
-  syncCachedMessages();
-});
-
 function searchContacts(query) {
   query = query.toLowerCase().trim();
-  
   return contacts.filter(contact => {
-    // Search in name
     if (contact.name.toLowerCase().includes(query)) return true;
-    
-    // Search in skills
-    if (contact.skills && contact.skills.length > 0) {
-      for (const skill of contact.skills) {
-        const skillLower = skill.toLowerCase();
-        // Direct match
-        if (skillLower.includes(query)) return true;
-        
-        // Multi-word query: check if ALL words in query exist in skill
-        const queryWords = query.split(/\s+/).filter(w => w.length > 2); // Filter out "who", "does"
-        if (queryWords.length > 0 && queryWords.every(word => skillLower.includes(word))) {
-          return true;
-        }
-      }
-    }
-    
-    // Search in notes
-    if (contact.notes && contact.notes.length > 0) {
-      for (const note of contact.notes) {
-        const noteText = typeof note === 'string' ? note : note.text;
-        if (noteText && noteText.toLowerCase().includes(query)) return true;
-      }
-    }
-    
+    if (contact.skills && contact.skills.some(skill => skill.toLowerCase().includes(query))) return true;
+    if (contact.notes && contact.notes.some(note => {
+      const noteText = typeof note === 'string' ? note : note.text;
+      return noteText && noteText.toLowerCase().includes(query);
+    })) return true;
     return false;
   });
 }
-
-// ========================================
-// MESSAGE HANDLING
-// ========================================
 
 async function sendMessage() {
   const input = document.getElementById('message-input');
@@ -521,24 +321,19 @@ async function sendMessage() {
   
   await new Promise(resolve => setTimeout(resolve, 300));
   
-  // Handle pending confirmations
   if (pendingConfirmation) {
     const response = text.toLowerCase();
     
     if (response.includes('yes') || response.includes('same')) {
-      // Merge with existing contact
       const existing = pendingConfirmation.existingContact;
       const newInfo = pendingConfirmation.newInfo;
       
-      // Merge data
       if (newInfo.phone && !existing.phone) existing.phone = newInfo.phone;
       if (newInfo.email && !existing.email) existing.email = newInfo.email;
       if (newInfo.skills) existing.skills = [...new Set([...existing.skills, ...newInfo.skills])];
       if (newInfo.notes) existing.notes = [...existing.notes, ...newInfo.notes];
       if (newInfo.debts) existing.debts = [...(existing.debts || []), ...newInfo.debts];
-      if (newInfo.reminders) existing.reminders = [...(existing.reminders || []), ...newInfo.reminders];
       if (newInfo.paymentMethods) existing.paymentMethods = [...(existing.paymentMethods || []), ...newInfo.paymentMethods];
-
       existing.updatedAt = new Date().toISOString();
       
       await syncContacts([existing]);
@@ -549,7 +344,6 @@ async function sendMessage() {
       isProcessing = false;
       return;
     } else if (response.includes('no') || response.includes('different')) {
-      // Create new contact
       const newContact = pendingConfirmation.newInfo;
       await syncContacts([newContact]);
       addBotMessage(`Added new contact: ${newContact.name}`);
@@ -566,125 +360,87 @@ async function sendMessage() {
     }
   }
   
-  // Check if query
   let isQuery = false;
-    if (navigator.onLine && contacts.length > 0) {
+  if (navigator.onLine && contacts.length > 0) {
     try {
-        const intentResponse = await fetch(`${CONFIG.API_URL}/api/detect-intent`, {
+      const intentResponse = await fetch(`${CONFIG.API_URL}/api/detect-intent`, {
         method: 'POST',
         headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${authToken}`
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`
         },
         body: JSON.stringify({ text })
-        });
-        
-        if (intentResponse.ok) {
+      });
+      if (intentResponse.ok) {
         const intentData = await intentResponse.json();
         isQuery = intentData.intent === 'query';
-        console.log('🧠 AI Intent:', intentData.intent);
-        }
+      }
     } catch (err) {
-        console.log('Intent detection failed, using fallback');
-        // Fallback to keyword matching
-        const queryWords = ['who', 'find', 'search', 'show', 'list', 'how much', 'owe', '?'];
-        isQuery = queryWords.some(word => text.toLowerCase().includes(word));
+      const queryWords = ['who', 'find', 'search', 'show', 'list', 'how much', 'owe', '?'];
+      isQuery = queryWords.some(word => text.toLowerCase().includes(word));
     }
-    }
+  }
  
   if (isQuery && contacts.length > 0) {
-    // Use AI for smart search
     if (navigator.onLine) {
-        try {
+      try {
         const searchResult = await fetch(`${CONFIG.API_URL}/api/contacts/search-ai`, {
-            method: 'POST',
-            headers: {
+          method: 'POST',
+          headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${authToken}`
-            },
-            body: JSON.stringify({ query: text, contacts: contacts })
+          },
+          body: JSON.stringify({ query: text, contacts: contacts })
         });
-        
         if (searchResult.ok) {
-            const data = await searchResult.json();
-            addBotMessage(data.response);
-            hideLoading();
-            isProcessing = false;
-            return;
+          const data = await searchResult.json();
+          addBotMessage(data.response);
+          hideLoading();
+          isProcessing = false;
+          return;
         }
-        } catch (err) {
-        console.log('AI search failed, using local search');
-        }
+      } catch (err) {
+        console.log('AI search failed');
+      }
     }
     
-    // Fallback to local search
     const results = searchContacts(text);
-    
     if (results.length > 0) {
-        let response = `Found ${results.length} match${results.length > 1 ? 'es' : ''}:\n\n`;
-        results.forEach(contact => {
+      let response = `Found ${results.length} match${results.length > 1 ? 'es' : ''}:\n\n`;
+      results.forEach(contact => {
         response += `**${contact.name.toUpperCase()}**\n`;
-        if (contact.skills && contact.skills.length > 0) {
-            response += `Skills: ${contact.skills.join(', ')}\n`;
-        }
+        if (contact.skills?.length > 0) response += `Skills: ${contact.skills.join(', ')}\n`;
         if (contact.phone) response += `Phone: ${contact.phone}\n`;
         if (contact.email) response += `Email: ${contact.email}\n`;
-        if (contact.paymentMethods && contact.paymentMethods.length > 0) {
-            response += `Payment: ${contact.paymentMethods.map(p => p.type).join(', ')}\n`;
-        }
-        if (contact.debts && contact.debts.length > 0) {
-            contact.debts.forEach(debt => {
-            const dir = debt.direction === 'i_owe_them' ? 'You owe' : 'They owe you';
-            response += `${dir}: $${debt.amount}\n`;
-            });
-        }
         response += '\n';
-        });
-        addBotMessage(response);
-        
+      });
+      addBotMessage(response);
     } else {
-        addBotMessage("No matches found. Try a different search!");
+      addBotMessage("No matches found. Try a different search!");
     }
-    } else {
-    // Parse new contact
+  } else {
     const parsed = await parseContactHybrid(text);
     
     if (parsed.contacts.length > 0) {
       const newContact = parsed.contacts[0];
-      
-      // Check for similar existing contacts
       const similar = findSimilarContacts(newContact.name);
       
       if (similar.length > 0 && similar[0].similarity >= 0.7) {
         const match = similar[0];
-        let reason = '';
+        let reason = match.reason === 'exact' ? 'I already have this exact name.' :
+                     match.reason === 'nickname' ? `This looks like a nickname of "${match.contact.name}".` :
+                     match.reason === 'typo' ? `This is very similar to "${match.contact.name}".` :
+                     `I have another "${match.contact.name.split(' ')[0]}" with a different last name.`;
         
-        if (match.reason === 'exact') {
-          reason = 'I already have this exact name.';
-        } else if (match.reason === 'nickname') {
-          reason = `This looks like a nickname of "${match.contact.name}".`;
-        } else if (match.reason === 'typo') {
-          reason = `This is very similar to "${match.contact.name}".`;
-        } else if (match.reason === 'same_first_name') {
-          reason = `I have another "${match.contact.name.split(' ')[0]}" with a different last name.`;
-        }
-        
-        pendingConfirmation = {
-          existingContact: match.contact,
-          newInfo: newContact
-        };
-        
+        pendingConfirmation = { existingContact: match.contact, newInfo: newContact };
         addBotMessage(`${reason}\n\nIs this the same person? (yes/no)`);
       } else {
-        // No duplicates, create new
         const stats = await syncContacts([newContact]);
-        
         if (stats) {
           let response = 'Got it! ';
           if (stats.created > 0) response += `Added ${newContact.name}.`;
           if (stats.updated > 0) response += `Updated info.`;
           addBotMessage(response);
-          trackEvent('contact_added', { name: newContact.name });
         } else {
           addBotMessage("Saved locally. Will sync when connection is available.");
         }
@@ -697,10 +453,6 @@ async function sendMessage() {
   hideLoading();
   isProcessing = false;
 }
-
-// ========================================
-// UI FUNCTIONS
-// ========================================
 
 function addUserMessage(text) {
   const messagesDiv = document.getElementById('messages');
@@ -737,7 +489,6 @@ function hideLoading() {
 
 function switchView(view) {
   currentView = view;
-  
   const tabs = document.querySelectorAll('.tab:not(.logout-btn)');
   tabs.forEach(tab => tab.classList.remove('active'));
   event.target.classList.add('active');
@@ -760,7 +511,6 @@ function renderContacts() {
     return;
   }
   
-  // Update count text
   const countText = document.getElementById('contacts-count-text');
   if (countText) countText.textContent = `${contacts.length} contact${contacts.length !== 1 ? 's' : ''}`;
   
@@ -770,20 +520,18 @@ function renderContacts() {
     card.className = 'contact-card';
     card.dataset.index = index;
     
-    const contactId = contact._id || contact.id;
-    
     let html = `
       <div class="contact-card-header">
         <h3 class="contact-name">${escapeHtml(contact.name)}</h3>
         <div class="contact-actions">
           <button class="icon-btn-sm edit-btn" data-index="${index}" title="Edit">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
               <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
             </svg>
           </button>
           <button class="icon-btn-sm delete delete-btn" data-index="${index}" title="Delete">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polyline points="3 6 5 6 21 6"></polyline>
               <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
             </svg>
@@ -792,23 +540,16 @@ function renderContacts() {
       </div>
     `;
     
-    if (contact.skills && contact.skills.length > 0) {
+    if (contact.skills?.length > 0) {
       html += '<div class="skills">';
-      contact.skills.forEach(skill => {
-        html += `<span class="skill-badge">${escapeHtml(skill)}</span>`;
-      });
+      contact.skills.forEach(skill => html += `<span class="skill-badge">${escapeHtml(skill)}</span>`);
       html += '</div>';
     }
     
-    if (contact.phone) {
-      html += `<div class="contact-detail"><strong>Phone:</strong> ${escapeHtml(contact.phone)}</div>`;
-    }
+    if (contact.phone) html += `<div class="contact-detail"><strong>Phone:</strong> ${escapeHtml(contact.phone)}</div>`;
+    if (contact.email) html += `<div class="contact-detail"><strong>Email:</strong> ${escapeHtml(contact.email)}</div>`;
     
-    if (contact.email) {
-      html += `<div class="contact-detail"><strong>Email:</strong> ${escapeHtml(contact.email)}</div>`;
-    }
-    
-    if (contact.debts && contact.debts.length > 0) {
+    if (contact.debts?.length > 0) {
       contact.debts.forEach(debt => {
         const direction = debt.direction === 'i_owe_them' ? 'You owe' : 'They owe you';
         const badgeClass = debt.direction === 'i_owe_them' ? 'owe-them' : 'owe-me';
@@ -816,7 +557,7 @@ function renderContacts() {
       });
     }
     
-    if (contact.paymentMethods && contact.paymentMethods.length > 0) {
+    if (contact.paymentMethods?.length > 0) {
       contact.paymentMethods.forEach(pm => {
         const username = pm.username ? `: ${pm.username}` : '';
         html += `<span class="payment-badge ${pm.type}">💳 ${pm.type}${username}</span>`;
@@ -827,7 +568,6 @@ function renderContacts() {
     grid.appendChild(card);
   });
   
-  // Add event listeners after rendering
   document.querySelectorAll('.edit-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
       const index = e.currentTarget.dataset.index;
@@ -853,23 +593,17 @@ function handleLogout() {
   if (confirm('Are you sure you want to logout?')) {
     localStorage.removeItem(CONFIG.STORAGE_KEYS.AUTH_TOKEN);
     localStorage.removeItem(CONFIG.STORAGE_KEYS.CURRENT_USER);
-    window.location.href = CONFIG.AUTH_PAGE;
+    window.location.replace(CONFIG.AUTH_PAGE);
   }
 }
 
-// Helper function to escape HTML
 function escapeHtml(text) {
   const div = document.createElement('div');
   div.textContent = text;
   return div.innerHTML;
 }
 
-// Start the app
 document.addEventListener('DOMContentLoaded', init);
-
-// ========================================
-// QUICK ADD FUNCTIONS
-// ========================================
 
 function openQuickAdd() {
   document.getElementById('quick-add-modal').classList.remove('hidden');
@@ -877,7 +611,6 @@ function openQuickAdd() {
 
 function closeQuickAdd() {
   document.getElementById('quick-add-modal').classList.add('hidden');
-  // Clear form
   document.getElementById('qa-name').value = '';
   document.getElementById('qa-phone').value = '';
   document.getElementById('qa-email').value = '';
@@ -902,19 +635,12 @@ async function submitQuickAdd() {
   
   const newContact = {
     id: `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-    name: name,
-    skills: skills,
-    phone: phone,
-    email: email,
-    notes: notes,
-    debts: [],
-    reminders: [],
-    metadata: {},
+    name, skills, phone, email, notes,
+    debts: [], reminders: [], metadata: {},
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
   
-  // Check for duplicates
   const similar = findSimilarContacts(name);
   
   if (similar.length > 0 && similar[0].similarity >= 0.7) {
@@ -939,9 +665,6 @@ async function submitQuickAdd() {
   
   closeQuickAdd();
 }
-// ========================================
-// DELETE & EDIT FUNCTIONS
-// ========================================
 
 async function deleteContact(contactId) {
   if (!confirm('Delete this contact?')) return;
@@ -949,9 +672,7 @@ async function deleteContact(contactId) {
   try {
     const response = await fetch(`${CONFIG.API_URL}/api/contacts/${contactId}`, {
       method: 'DELETE',
-      headers: {
-        'Authorization': `Bearer ${authToken}`
-      }
+      headers: { 'Authorization': `Bearer ${authToken}` }
     });
     
     if (response.ok) {
@@ -959,7 +680,6 @@ async function deleteContact(contactId) {
       updateContactCount();
       renderContacts();
       addBotMessage('Contact deleted!');
-      trackEvent('contact_deleted');
     } else {
       addBotMessage('Failed to delete contact.');
     }
@@ -973,14 +693,12 @@ function editContact(contactId) {
   const contact = contacts.find(c => (c._id || c.id) === contactId);
   if (!contact) return;
   
-  // Populate edit modal
   document.getElementById('edit-contact-id').value = contact._id || contact.id;
   document.getElementById('edit-name').value = contact.name || '';
   document.getElementById('edit-phone').value = contact.phone || '';
   document.getElementById('edit-email').value = contact.email || '';
   document.getElementById('edit-skills').value = (contact.skills || []).join(', ');
   
-  // Show modal
   document.getElementById('edit-modal').classList.remove('hidden');
 }
 
@@ -993,46 +711,35 @@ async function submitEdit() {
   const contact = contacts.find(c => (c._id || c.id) === contactId);
   if (!contact) return;
   
-  // Update contact data
   contact.name = document.getElementById('edit-name').value.trim().toLowerCase();
   contact.phone = document.getElementById('edit-phone').value.trim() || null;
   contact.email = document.getElementById('edit-email').value.trim() || null;
-  contact.skills = document.getElementById('edit-skills').value
-    .split(',')
-    .map(s => s.trim())
-    .filter(s => s);
+  contact.skills = document.getElementById('edit-skills').value.split(',').map(s => s.trim()).filter(s => s);
   contact.updatedAt = new Date().toISOString();
   
-  // Sync to server
-  // Update on server
-try {
-  const response = await fetch(`${CONFIG.API_URL}/api/contacts/${contactId}`, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${authToken}`
-    },
-    body: JSON.stringify(contact)
-  });
-  
-  if (response.ok) {
-    const updated = await response.json();
-    const index = contacts.findIndex(c => (c._id || c.id) === contactId);
-    if (index !== -1) contacts[index] = updated;
-    renderContacts();
-    trackEvent('contact_edited', { name: contact.name });
-
+  try {
+    const response = await fetch(`${CONFIG.API_URL}/api/contacts/${contactId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken}`
+      },
+      body: JSON.stringify(contact)
+    });
+    
+    if (response.ok) {
+      const updated = await response.json();
+      const index = contacts.findIndex(c => (c._id || c.id) === contactId);
+      if (index !== -1) contacts[index] = updated;
+      renderContacts();
+    }
+  } catch (error) {
+    console.error('Update error:', error);
   }
-} catch (error) {
-  console.error('Update error:', error);
-}
   
   closeEditModal();
   addBotMessage(`Updated ${contact.name}!`);
 }
-// ========================================
-// MOBILE UX: SWIPE TO DELETE
-// ========================================
 
 let touchStartX = 0;
 let touchCurrentX = 0;
@@ -1042,7 +749,6 @@ const SWIPE_THRESHOLD = 100;
 function initSwipeToDelete() {
   const grid = document.getElementById('contacts-grid');
   if (!grid) return;
-
   grid.addEventListener('touchstart', handleTouchStart, { passive: true });
   grid.addEventListener('touchmove', handleTouchMove, { passive: false });
   grid.addEventListener('touchend', handleTouchEnd, { passive: true });
@@ -1051,7 +757,6 @@ function initSwipeToDelete() {
 function handleTouchStart(e) {
   const card = e.target.closest('.contact-card');
   if (!card) return;
-  
   touchStartX = e.touches[0].clientX;
   touchCurrentX = 0;
   swipingCard = card;
@@ -1059,11 +764,8 @@ function handleTouchStart(e) {
 
 function handleTouchMove(e) {
   if (!swipingCard) return;
-  
   touchCurrentX = e.touches[0].clientX;
   const diffX = touchStartX - touchCurrentX;
-  
-  // Only allow left swipe
   if (diffX > 0) {
     e.preventDefault();
     const moveX = Math.min(diffX, 150);
@@ -1074,28 +776,18 @@ function handleTouchMove(e) {
 
 function handleTouchEnd(e) {
   if (!swipingCard) return;
-  
   const diffX = touchStartX - touchCurrentX;
   
-  // Only trigger delete if actually swiped (not just tapped)
   if (diffX > SWIPE_THRESHOLD && touchCurrentX !== 0) {
-    // Trigger delete
     const index = swipingCard.dataset.index;
     const contact = contacts[index];
     if (contact) {
-      // Vibrate if available
       if (navigator.vibrate) navigator.vibrate(50);
-      
-      // Animate out
       swipingCard.style.transform = 'translateX(-100%)';
       swipingCard.style.opacity = '0';
-      
-      setTimeout(() => {
-        deleteContact(contact._id || contact.id);
-      }, 200);
+      setTimeout(() => deleteContact(contact._id || contact.id), 200);
     }
   } else {
-    // Reset position
     swipingCard.style.transform = '';
     swipingCard.classList.remove('swiping');
   }
@@ -1104,33 +796,13 @@ function handleTouchEnd(e) {
   touchStartX = 0;
   touchCurrentX = 0;
 }
-// ========================================
-// FEEDBACK & ANALYTICS
-// ========================================
-
-let selectedRating = 0;
 
 function openFeedback() {
   document.getElementById('feedback-modal').classList.remove('hidden');
-  
-  // Track modal open
-  if (window.posthog) {
-    posthog.capture('feedback_modal_opened');
-  }
-  
-  // Setup rating buttons
-  document.querySelectorAll('.rating-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.rating-btn').forEach(b => b.classList.remove('selected'));
-      btn.classList.add('selected');
-      selectedRating = parseInt(btn.dataset.rating);
-    });
-  });
 }
 
 function closeFeedback() {
   document.getElementById('feedback-modal').classList.add('hidden');
-  selectedRating = 0;
   document.getElementById('feedback-text').value = '';
   document.querySelectorAll('.rating-btn').forEach(b => b.classList.remove('selected'));
 }
@@ -1139,26 +811,16 @@ async function submitFeedback() {
   const text = document.getElementById('feedback-text').value.trim();
   const type = document.getElementById('feedback-type').value;
   
-  if (!selectedRating && !text) {
+  let rating = 0;
+  document.querySelectorAll('.rating-btn.selected').forEach(btn => {
+    rating = parseInt(btn.dataset.rating);
+  });
+  
+  if (!rating && !text) {
     alert('Please rate your experience or leave a comment!');
     return;
   }
   
-  const feedback = {
-    rating: selectedRating,
-    text: text,
-    type: type,
-    timestamp: new Date().toISOString(),
-    userEmail: currentUser?.email || 'anonymous',
-    contactCount: contacts.length
-  };
-  
-  // Send to PostHog
-  if (window.posthog) {
-    posthog.capture('feedback_submitted', feedback);
-  }
-  
-  // Also send to backend (optional)
   try {
     await fetch(`${CONFIG.API_URL}/api/feedback`, {
       method: 'POST',
@@ -1166,100 +828,23 @@ async function submitFeedback() {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${authToken}`
       },
-      body: JSON.stringify(feedback)
+      body: JSON.stringify({ rating, text, type, timestamp: new Date().toISOString() })
     });
   } catch (err) {
-    console.log('Feedback saved to PostHog');
+    console.log('Feedback error:', err);
   }
   
   closeFeedback();
   addBotMessage('Thanks for your feedback! 💜');
 }
 
-// Track key events with PostHog
-function trackEvent(eventName, properties = {}) {
-  if (window.posthog) {
-    posthog.capture(eventName, {
-      ...properties,
-      user_email: currentUser?.email
-    });
-  }
-}
-
-
-// ========================================
-// MOBILE UX: PULL TO REFRESH
-// ========================================
-
-let pullStartY = 0;
-let isPulling = false;
-const PULL_THRESHOLD = 80;
-
-function initPullToRefresh() {
-  const contactsView = document.getElementById('contacts-view');
-  if (!contactsView) return;
-  
-  // Add pull indicator
-  const pullIndicator = document.createElement('div');
-  pullIndicator.className = 'pull-to-refresh';
-  pullIndicator.innerHTML = `
-    <svg class="spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
-    </svg>
-    <span class="pull-text">Pull to refresh</span>
-  `;
-  contactsView.insertBefore(pullIndicator, contactsView.firstChild);
-  
-  contactsView.addEventListener('touchstart', (e) => {
-    if (contactsView.scrollTop === 0) {
-      pullStartY = e.touches[0].clientY;
-      isPulling = true;
-    }
-  }, { passive: true });
-  
-  contactsView.addEventListener('touchmove', (e) => {
-    if (!isPulling) return;
-    
-    const pullDistance = e.touches[0].clientY - pullStartY;
-    
-    if (pullDistance > 0 && contactsView.scrollTop === 0) {
-      const pull = Math.min(pullDistance * 0.5, 100);
-      pullIndicator.style.transform = `translateY(${pull}px)`;
-      
-      if (pull > PULL_THRESHOLD) {
-        pullIndicator.querySelector('.pull-text').textContent = 'Release to refresh';
-      } else {
-        pullIndicator.querySelector('.pull-text').textContent = 'Pull to refresh';
-      }
-    }
-  }, { passive: true });
-  
-  contactsView.addEventListener('touchend', async () => {
-    if (!isPulling) return;
-    
-    const pullIndicatorEl = document.querySelector('.pull-to-refresh');
-    const currentPull = parseFloat(pullIndicatorEl.style.transform.replace(/[^0-9.-]/g, '')) || 0;
-    
-    if (currentPull > PULL_THRESHOLD) {
-      // Trigger refresh
-      pullIndicatorEl.classList.add('refreshing');
-      pullIndicatorEl.querySelector('.pull-text').textContent = 'Refreshing...';
-      
-      if (navigator.vibrate) navigator.vibrate(30);
-      
-      await loadContacts();
-      
-      pullIndicatorEl.classList.remove('refreshing');
-    }
-    
-    pullIndicatorEl.style.transform = '';
-    isPulling = false;
-    pullStartY = 0;
-  }, { passive: true });
-}
-
-// Initialize mobile UX on load
 document.addEventListener('DOMContentLoaded', () => {
   initSwipeToDelete();
-  initPullToRefresh();
+  
+  document.querySelectorAll('.rating-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.rating-btn').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+    });
+  });
 });
